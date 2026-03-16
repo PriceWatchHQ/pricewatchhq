@@ -4,8 +4,12 @@
 
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM = process.env.EMAIL_FROM || 'alerts@pricewatchhq.com';
+let _resend = null;
+function getResend() {
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
+  return _resend;
+}
+const FROM = () => process.env.EMAIL_FROM || 'alerts@pricewatchhq.com';
 
 /**
  * Send a price change alert email.
@@ -41,8 +45,8 @@ export async function sendPriceAlert({ to, label, url, oldPrice, newPrice }) {
     </div>
   `;
 
-  await resend.emails.send({
-    from: FROM,
+  await getResend().emails.send({
+    from: FROM(),
     to,
     subject,
     html,
