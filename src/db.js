@@ -49,6 +49,17 @@ db.exec(`
     email TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS scheduled_posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    scheduled_for INTEGER NOT NULL,
+    posted INTEGER NOT NULL DEFAULT 0,
+    tweet_id TEXT,
+    posted_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
 `);
 
 export default db;
+export function getDb() { return db; }

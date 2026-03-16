@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import db from './db.js';
 import { scrapePrice } from './scraper.js';
+import { runPoster } from './poster.js';
 
 /**
  * Start the hourly price-check cron job.
@@ -50,4 +51,11 @@ export function startScheduler() {
   });
 
   console.log('[scheduler] Hourly price check scheduled.');
+
+  // Check for scheduled X posts every 15 minutes
+  cron.schedule('*/15 * * * *', async () => {
+    await runPoster();
+  });
+
+  console.log('[scheduler] X poster scheduled (every 15 min).');
 }
