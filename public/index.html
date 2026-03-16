@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PriceWatch HQ — Competitor Price Monitoring</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --navy: #0A0F1E;
+      --navy-light: #121830;
+      --accent: #4F8CFF;
+      --accent-hover: #3A6FDB;
+      --text: #E2E8F0;
+      --text-muted: #94A3B8;
+      --card-bg: #151B30;
+      --border: #1E2740;
+      --green: #34D399;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--navy);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    /* ---- NAV ---- */
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 1.5rem 2rem;
+    }
+    .logo {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #fff;
+      text-decoration: none;
+    }
+    .logo span { color: var(--accent); }
+    nav a.cta-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+
+    /* ---- HERO ---- */
+    .hero {
+      text-align: center;
+      padding: 5rem 2rem 4rem;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .hero h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 1.25rem;
+      color: #fff;
+    }
+    .hero h1 em {
+      font-style: normal;
+      color: var(--accent);
+    }
+    .hero p {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      margin-bottom: 2.5rem;
+      max-width: 540px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* ---- WAITLIST FORM ---- */
+    .waitlist-form {
+      display: flex;
+      gap: 0.75rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .waitlist-form input[type="email"] {
+      padding: 0.85rem 1.25rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--navy-light);
+      color: #fff;
+      font-size: 1rem;
+      width: 300px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .waitlist-form input[type="email"]:focus {
+      border-color: var(--accent);
+    }
+    .waitlist-form button {
+      padding: 0.85rem 2rem;
+      border-radius: 8px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .waitlist-form button:hover { background: var(--accent-hover); }
+    #waitlist-msg {
+      width: 100%;
+      text-align: center;
+      margin-top: 0.75rem;
+      font-size: 0.9rem;
+      min-height: 1.4em;
+    }
+    .msg-success { color: var(--green); }
+    .msg-error { color: #F87171; }
+
+    /* ---- FEATURES ---- */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem;
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 2rem 2rem 4rem;
+    }
+    .feature-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+    }
+    .feature-card h3 {
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+      color: #fff;
+    }
+    .feature-card p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    /* ---- PRICING ---- */
+    .pricing-section {
+      text-align: center;
+      padding: 3rem 2rem 5rem;
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+    .pricing-section h2 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: #fff;
+    }
+    .pricing-section > p {
+      color: var(--text-muted);
+      margin-bottom: 2.5rem;
+    }
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+    }
+    .price-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2.5rem 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .price-card.popular {
+      border-color: var(--accent);
+      box-shadow: 0 0 30px rgba(79, 140, 255, 0.15);
+    }
+    .price-card .tier {
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+    .price-card .amount {
+      font-size: 2.75rem;
+      font-weight: 800;
+      color: #fff;
+    }
+    .price-card .amount span {
+      font-size: 1rem;
+      font-weight: 400;
+      color: var(--text-muted);
+    }
+    .price-card ul {
+      list-style: none;
+      margin: 1.5rem 0 2rem;
+      width: 100%;
+    }
+    .price-card li {
+      padding: 0.45rem 0;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .price-card li:last-child { border-bottom: none; }
+    .price-card .btn {
+      display: inline-block;
+      padding: 0.75rem 2rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 0.2s;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      background: transparent;
+      margin-top: auto;
+    }
+    .price-card .btn:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+    .price-card.popular .btn {
+      background: var(--accent);
+      color: #fff;
+    }
+    .price-card.popular .btn:hover { background: var(--accent-hover); }
+
+    /* ---- FOOTER ---- */
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo">PriceWatch<span>HQ</span></a>
+  <a href="#pricing" class="cta-link">Pricing</a>
+</nav>
+
+<section class="hero">
+  <h1>Know when prices change. <em>Instantly.</em></h1>
+  <p>Monitor competitor prices across the web. Get alerts the moment something changes so you can stay ahead.</p>
+
+  <form class="waitlist-form" id="waitlist-form">
+    <input type="email" name="email" placeholder="you@example.com" required />
+    <button type="submit">Join the Waitlist</button>
+    <div id="waitlist-msg"></div>
+  </form>
+</section>
+
+<section class="features">
+  <div class="feature-card">
+    <h3>Automated Monitoring</h3>
+    <p>We check competitor pages every hour and track every price movement automatically.</p>
+  </div>
+  <div class="feature-card">
+    <h3>Instant Alerts</h3>
+    <p>Get notified the second a price drops or spikes — email, Slack, or webhook.</p>
+  </div>
+  <div class="feature-card">
+    <h3>Price History</h3>
+    <p>Full historical charts so you can spot trends, seasonality, and competitor strategies.</p>
+  </div>
+</section>
+
+<section class="pricing-section" id="pricing">
+  <h2>Simple, transparent pricing</h2>
+  <p>Start small. Scale when you're ready.</p>
+
+  <div class="pricing-grid">
+    <div class="price-card">
+      <div class="tier">Starter</div>
+      <div class="amount">$49<span>/mo</span></div>
+      <ul>
+        <li>50 monitored URLs</li>
+        <li>Hourly price checks</li>
+        <li>Email alerts</li>
+        <li>7-day price history</li>
+      </ul>
+      <a class="btn" href="#waitlist-form">Get Started</a>
+    </div>
+
+    <div class="price-card popular">
+      <div class="tier">Pro</div>
+      <div class="amount">$99<span>/mo</span></div>
+      <ul>
+        <li>250 monitored URLs</li>
+        <li>15-minute price checks</li>
+        <li>Email + Slack alerts</li>
+        <li>90-day price history</li>
+        <li>CSV export</li>
+      </ul>
+      <a class="btn" href="#waitlist-form">Get Started</a>
+    </div>
+
+    <div class="price-card">
+      <div class="tier">Business</div>
+      <div class="amount">$199<span>/mo</span></div>
+      <ul>
+        <li>Unlimited URLs</li>
+        <li>5-minute price checks</li>
+        <li>Email, Slack &amp; webhook alerts</li>
+        <li>Unlimited price history</li>
+        <li>API access</li>
+        <li>Priority support</li>
+      </ul>
+      <a class="btn" href="#waitlist-form">Get Started</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  &copy; 2026 PriceWatch HQ. All rights reserved.
+</footer>
+
+<script>
+  const form = document.getElementById('waitlist-form');
+  const msg = document.getElementById('waitlist-msg');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    msg.textContent = '';
+    msg.className = '';
+
+    const email = form.email.value.trim();
+    if (!email) return;
+
+    try {
+      const res = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        msg.textContent = "You're on the list! We'll be in touch soon.";
+        msg.className = 'msg-success';
+        form.email.value = '';
+      } else {
+        msg.textContent = data.error || 'Something went wrong.';
+        msg.className = 'msg-error';
+      }
+    } catch {
+      msg.textContent = 'Network error. Please try again.';
+      msg.className = 'msg-error';
+    }
+  });
+</script>
+
+</body>
+</html>
