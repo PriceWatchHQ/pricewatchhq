@@ -74,7 +74,31 @@ db.exec(`
     created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    stripe_subscription_id TEXT,
+    stripe_customer_id TEXT,
+    plan TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
 `);
+
+// Add billing columns to users if they don't exist (migrations)
+const userCols = db.pragma('table_info(users)').map(c => c.name);
+if (!userCols.includes('stripe_customer_id')) {
+  db.exec(`ALTER TABLE users ADD COLUMN stripe_customer_id TEXT`);
+}
+if (!userCols.includes('plan')) {
+  db.exec(`ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'`);
+}
+if (!userCols.includes('plan_expires_at')) {
+  db.exec(`ALTER TABLE users ADD COLUMN plan_expires_at INTEGER`);
+}
 
 export default db;
 export function getDb() { return db; }

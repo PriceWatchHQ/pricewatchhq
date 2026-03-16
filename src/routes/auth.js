@@ -96,7 +96,7 @@ export default async function authRoutes(app) {
       return reply.status(401).send({ error: 'Invalid or expired session' });
     }
 
-    const user = db.prepare('SELECT id, email, name, created_at FROM users WHERE id = ?').get(session.user_id);
+    const user = db.prepare('SELECT id, email, name, plan, created_at FROM users WHERE id = ?').get(session.user_id);
     if (!user) {
       return reply.status(401).send({ error: 'User not found' });
     }
