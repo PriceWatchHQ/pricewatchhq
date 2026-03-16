@@ -1,5 +1,6 @@
 import { randomBytes } from 'crypto';
 import db from '../db.js';
+import { sendMagicLinkEmail } from '../mailer.js';
 
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
 const LOGIN_TOKEN_TTL = 15 * 60 * 1000; // 15 minutes in ms
@@ -27,13 +28,16 @@ export default async function authRoutes(app) {
     db.prepare('INSERT INTO login_tokens (token, email, created_at, expires_at) VALUES (?, ?, ?, ?)')
       .run(token, email, now, expiresAt);
 
-    // In dev mode, return the token directly. In production, email it.
+    const loginUrl = `https://pricewatchhq-production.up.railway.app/api/auth/verify?token=${token}`;
+
+    // Send magic link email
+    sendMagicLinkEmail({ to: email, loginUrl }).catch(err =>
+      console.error('[auth] Failed to send magic link email:', err.message)
+    );
+
     return reply.send({
-      message: 'Magic link created (dev mode — token returned directly)',
+      message: 'Magic link sent! Check your email.',
       email,
-      token,
-      // This is the URL they'd click in the email
-      loginUrl: `/api/auth/verify?token=${token}`,
     });
   });
 

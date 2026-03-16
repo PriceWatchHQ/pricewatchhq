@@ -658,15 +658,9 @@
       const data = await res.json();
 
       if (res.ok) {
-        loginMsg.textContent = 'Magic link created!';
+        loginMsg.textContent = '✅ Check your email — your login link is on the way!';
         loginMsg.className = 'msg-success';
-
-        // Dev mode: show the token link
-        if (data.loginUrl) {
-          tokenBox.style.display = 'block';
-          tokenLink.href = data.loginUrl;
-          tokenLink.textContent = window.location.origin + data.loginUrl;
-        }
+        tokenBox.style.display = 'none';
       } else {
         loginMsg.textContent = data.error || 'Something went wrong.';
         loginMsg.className = 'msg-error';

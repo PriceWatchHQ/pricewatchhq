@@ -106,3 +106,33 @@ export async function sendWelcomeEmail({ to }) {
 
   console.log(`[mailer] Welcome email sent to ${to}`);
 }
+
+/**
+ * Send a magic link login email.
+ */
+export async function sendMagicLinkEmail({ to, loginUrl }) {
+  const html = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; background: #0A0F1E; color: #E2E8F0; padding: 40px 32px; border-radius: 12px;">
+      <h1 style="color: #4F8CFF; font-size: 1.4em; margin-bottom: 8px;">Your login link 🔐</h1>
+      <p style="color: #94A3B8; margin-bottom: 32px;">Click the button below to sign in to PriceWatch HQ. This link expires in 15 minutes.</p>
+
+      <a href="${loginUrl}" style="display: inline-block; background: #4F8CFF; color: white; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: bold; font-size: 1.05em;">
+        Sign in to PriceWatch HQ →
+      </a>
+
+      <p style="color: #4a5568; font-size: 0.85em; margin-top: 32px;">
+        If you didn't request this, you can safely ignore this email.<br/>
+        This link will expire in 15 minutes.
+      </p>
+    </div>
+  `;
+
+  await getResend().emails.send({
+    from: FROM(),
+    to,
+    subject: 'Your PriceWatch HQ login link',
+    html,
+  });
+
+  console.log(`[mailer] Magic link sent to ${to}`);
+}
