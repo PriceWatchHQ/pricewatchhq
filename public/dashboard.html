@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PriceWatch HQ — Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --navy: #0A0F1E;
+      --card-bg: #121830;
+      --border: #1E2740;
+      --accent: #4F8CFF;
+      --accent-hover: #3A6FDB;
+      --text: #E2E8F0;
+      --text-muted: #94A3B8;
+      --green: #34D399;
+      --red: #F87171;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--navy);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ===== LOGIN SCREEN ===== */
+    #login-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    .login-box {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 420px;
+      text-align: center;
+    }
+    .login-box .logo {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: #fff;
+      text-decoration: none;
+      display: block;
+      margin-bottom: 1.5rem;
+    }
+    .login-box .logo span { color: var(--accent); }
+    .login-box h2 {
+      font-size: 1.25rem;
+      margin-bottom: 0.5rem;
+      color: #fff;
+    }
+    .login-box p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 1.75rem;
+    }
+    .login-box input[type="email"] {
+      width: 100%;
+      padding: 0.85rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--navy);
+      color: #fff;
+      font-size: 1rem;
+      outline: none;
+      margin-bottom: 0.75rem;
+      transition: border-color 0.2s;
+    }
+    .login-box input[type="email"]:focus { border-color: var(--accent); }
+    .login-box .btn-primary {
+      width: 100%;
+      padding: 0.875rem;
+      border-radius: 8px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .login-box .btn-primary:hover { background: var(--accent-hover); }
+    #login-msg {
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      min-height: 1.4em;
+    }
+    .msg-success { color: var(--green); }
+    .msg-error { color: var(--red); }
+
+    /* Token display box (dev mode) */
+    #token-box {
+      display: none;
+      background: var(--navy);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      text-align: left;
+      font-size: 0.85rem;
+    }
+    #token-box .token-label {
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+    #token-box .token-link {
+      color: var(--accent);
+      word-break: break-all;
+      text-decoration: none;
+    }
+    #token-box .token-link:hover { text-decoration: underline; }
+    #token-box .dev-badge {
+      display: inline-block;
+      background: #F59E0B22;
+      color: #F59E0B;
+      border: 1px solid #F59E0B44;
+      border-radius: 4px;
+      padding: 0.1rem 0.4rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+
+    /* ===== DASHBOARD ===== */
+    #dashboard-screen { display: none; }
+
+    /* Header */
+    .dash-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--card-bg);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .dash-header .logo {
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: #fff;
+      text-decoration: none;
+    }
+    .dash-header .logo span { color: var(--accent); }
+    .dash-header .user-area {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .dash-header .user-email {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .dash-header .btn-logout {
+      padding: 0.4rem 1rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .dash-header .btn-logout:hover {
+      border-color: var(--red);
+      color: var(--red);
+    }
+
+    /* Stats bar */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      padding: 1.5rem 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+    }
+    .stat-card .stat-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.25rem;
+    }
+    .stat-card .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* Main content */
+    .dash-main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 2rem 2rem;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+
+    /* Add URL form */
+    .add-url-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+    .add-url-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 1rem;
+    }
+    .add-url-form {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .add-url-form input {
+      flex: 1;
+      min-width: 180px;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--navy);
+      color: #fff;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .add-url-form input:focus { border-color: var(--accent); }
+    .add-url-form input::placeholder { color: var(--text-muted); }
+    .add-url-form .btn-add {
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+    .add-url-form .btn-add:hover { background: var(--accent-hover); }
+    #add-url-msg {
+      width: 100%;
+      font-size: 0.85rem;
+      margin-top: 0.25rem;
+      min-height: 1.2em;
+    }
+
+    /* URLs table */
+    .urls-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .urls-card-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .urls-card-header h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+    }
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    thead th {
+      padding: 0.75rem 1.25rem;
+      text-align: left;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(79, 140, 255, 0.05); }
+    tbody tr.selected { background: rgba(79, 140, 255, 0.08); }
+    tbody td {
+      padding: 0.85rem 1.25rem;
+      color: var(--text);
+      vertical-align: middle;
+    }
+    td.url-cell {
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    td.url-cell a {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+    td.url-cell a:hover { text-decoration: underline; }
+    .change-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+    }
+    .change-up { background: rgba(248, 113, 113, 0.12); color: var(--red); }
+    .change-down { background: rgba(52, 211, 153, 0.12); color: var(--green); }
+    .change-same { background: rgba(148, 163, 184, 0.1); color: var(--text-muted); }
+    .btn-delete {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 5px;
+      padding: 0.3rem 0.6rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-delete:hover { border-color: var(--red); color: var(--red); }
+    .empty-state {
+      padding: 3rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    /* Chart card */
+    .chart-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+    .chart-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+    .chart-card-header h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+    }
+    .chart-card-header .chart-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    #price-chart-container {
+      position: relative;
+      height: 260px;
+    }
+    .chart-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 200px;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 640px) {
+      .stats-bar { grid-template-columns: 1fr; }
+      .dash-header, .stats-bar, .dash-main { padding-left: 1rem; padding-right: 1rem; }
+      .add-url-form { flex-direction: column; }
+      .add-url-form .btn-add { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== LOGIN SCREEN ===== -->
+<div id="login-screen">
+  <div class="login-box">
+    <a href="/" class="logo">PriceWatch<span>HQ</span></a>
+    <h2>Sign in to your dashboard</h2>
+    <p>Enter your email to receive a magic link.</p>
+
+    <form id="login-form">
+      <input type="email" id="login-email" placeholder="you@example.com" required autocomplete="email" />
+      <button type="submit" class="btn-primary">Send Magic Link</button>
+    </form>
+
+    <div id="login-msg"></div>
+
+    <div id="token-box">
+      <div class="dev-badge">DEV MODE</div>
+      <div class="token-label">Magic link (click to log in):</div>
+      <a id="token-link" class="token-link" href="#"></a>
+    </div>
+  </div>
+</div>
+
+<!-- ===== DASHBOARD SCREEN ===== -->
+<div id="dashboard-screen">
+  <header class="dash-header">
+    <a href="/" class="logo">PriceWatch<span>HQ</span></a>
+    <div class="user-area">
+      <span class="user-email" id="user-email"></span>
+      <button class="btn-logout" id="logout-btn">Logout</button>
+    </div>
+  </header>
+
+  <!-- Stats bar -->
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="stat-label">URLs Monitored</div>
+      <div class="stat-value" id="stat-urls">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Price Checks</div>
+      <div class="stat-value" id="stat-checks">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Alerts Sent</div>
+      <div class="stat-value" id="stat-alerts">—</div>
+    </div>
+  </div>
+
+  <div class="dash-main">
+    <!-- Add URL -->
+    <div class="add-url-card">
+      <h3>Add URL to monitor</h3>
+      <form class="add-url-form" id="add-url-form">
+        <input type="text" id="add-label" placeholder="Label (e.g. Competitor Widget)" />
+        <input type="url" id="add-url" placeholder="https://example.com/product" required />
+        <button type="submit" class="btn-add">Add URL</button>
+        <div id="add-url-msg"></div>
+      </form>
+    </div>
+
+    <!-- URLs table -->
+    <div class="urls-card">
+      <div class="urls-card-header">
+        <h3>Monitored URLs</h3>
+        <span id="urls-loading"></span>
+      </div>
+      <div class="table-wrap">
+        <table id="urls-table">
+          <thead>
+            <tr>
+              <th>Label</th>
+              <th>URL</th>
+              <th>Last Price</th>
+              <th>Last Checked</th>
+              <th>Change</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="urls-tbody">
+            <tr><td colspan="6" class="empty-state">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Price history chart -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <h3>Price History</h3>
+        <span class="chart-label" id="chart-url-label">Select a row to view history</span>
+      </div>
+      <div id="price-chart-container">
+        <div class="chart-placeholder" id="chart-placeholder">Click a row to see price history</div>
+        <canvas id="price-chart" style="display:none;"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===== STATE =====
+  let currentUser = null;
+  let urlsData = [];
+  let selectedUrlId = null;
+  let chartInstance = null;
+
+  // ===== INIT =====
+  async function init() {
+    try {
+      const res = await fetch('/api/auth/me');
+      if (res.ok) {
+        const { user } = await res.json();
+        currentUser = user;
+        showDashboard(user);
+      } else {
+        showLogin();
+      }
+    } catch {
+      showLogin();
+    }
+  }
+
+  function showLogin() {
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('dashboard-screen').style.display = 'none';
+  }
+
+  function showDashboard(user) {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('dashboard-screen').style.display = 'block';
+    document.getElementById('user-email').textContent = user.email;
+    loadUrls();
+    loadStats();
+  }
+
+  // ===== LOGIN =====
+  const loginForm = document.getElementById('login-form');
+  const loginMsg = document.getElementById('login-msg');
+  const tokenBox = document.getElementById('token-box');
+  const tokenLink = document.getElementById('token-link');
+
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    loginMsg.textContent = 'Sending…';
+    loginMsg.className = '';
+    tokenBox.style.display = 'none';
+
+    const email = document.getElementById('login-email').value.trim();
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        loginMsg.textContent = 'Magic link created!';
+        loginMsg.className = 'msg-success';
+
+        // Dev mode: show the token link
+        if (data.loginUrl) {
+          tokenBox.style.display = 'block';
+          tokenLink.href = data.loginUrl;
+          tokenLink.textContent = window.location.origin + data.loginUrl;
+        }
+      } else {
+        loginMsg.textContent = data.error || 'Something went wrong.';
+        loginMsg.className = 'msg-error';
+      }
+    } catch {
+      loginMsg.textContent = 'Network error. Please try again.';
+      loginMsg.className = 'msg-error';
+    }
+  });
+
+  // ===== LOGOUT =====
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    currentUser = null;
+    urlsData = [];
+    selectedUrlId = null;
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    showLogin();
+  });
+
+  // ===== LOAD URLs =====
+  async function loadUrls() {
+    document.getElementById('urls-loading').innerHTML = '<span class="spinner"></span>';
+    try {
+      const res = await fetch('/api/dashboard/urls');
+      if (!res.ok) throw new Error('Failed');
+      const { urls } = await res.json();
+      urlsData = urls;
+      renderUrls(urls);
+    } catch {
+      document.getElementById('urls-tbody').innerHTML =
+        '<tr><td colspan="6" class="empty-state">Failed to load URLs.</td></tr>';
+    } finally {
+      document.getElementById('urls-loading').innerHTML = '';
+    }
+  }
+
+  function renderUrls(urls) {
+    const tbody = document.getElementById('urls-tbody');
+    if (!urls || urls.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No URLs monitored yet. Add one above!</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = urls.map(u => {
+      const price = u.last_price != null ? '$' + Number(u.last_price).toFixed(2) : '—';
+      const checked = u.last_checked_at
+        ? new Date(u.last_checked_at).toLocaleString()
+        : '—';
+      const changeBadge = changeIndicator(u.change);
+      const isSelected = u.id === selectedUrlId;
+      return `<tr data-id="${u.id}" class="${isSelected ? 'selected' : ''}">
+        <td><strong>${escHtml(u.label || '—')}</strong></td>
+        <td class="url-cell"><a href="${escHtml(u.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${escHtml(u.url)}</a></td>
+        <td>${price}</td>
+        <td style="color:var(--text-muted);font-size:0.85rem">${checked}</td>
+        <td>${changeBadge}</td>
+        <td><button class="btn-delete" onclick="deleteUrl(event,${u.id})">Remove</button></td>
+      </tr>`;
+    }).join('');
+
+    // Row click to load chart
+    tbody.querySelectorAll('tr[data-id]').forEach(row => {
+      row.addEventListener('click', () => {
+        const id = parseInt(row.dataset.id);
+        selectUrl(id);
+      });
+    });
+  }
+
+  function changeIndicator(change) {
+    if (change === 'up') return '<span class="change-badge change-up">▲ Up</span>';
+    if (change === 'down') return '<span class="change-badge change-down">▼ Down</span>';
+    return '<span class="change-badge change-same">— Same</span>';
+  }
+
+  // ===== LOAD STATS =====
+  async function loadStats() {
+    try {
+      const res = await fetch('/api/dashboard/stats');
+      if (!res.ok) return;
+      const { totalUrls, totalChecks, totalAlerts } = await res.json();
+      document.getElementById('stat-urls').textContent = totalUrls;
+      document.getElementById('stat-checks').textContent = totalChecks;
+      document.getElementById('stat-alerts').textContent = totalAlerts;
+    } catch { /* silent */ }
+  }
+
+  // ===== ADD URL =====
+  document.getElementById('add-url-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const label = document.getElementById('add-label').value.trim();
+    const url = document.getElementById('add-url').value.trim();
+    const msg = document.getElementById('add-url-msg');
+    msg.textContent = '';
+    msg.className = '';
+
+    try {
+      const res = await fetch('/api/dashboard/urls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label, url }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        msg.textContent = 'URL added!';
+        msg.className = 'msg-success';
+        document.getElementById('add-label').value = '';
+        document.getElementById('add-url').value = '';
+        await loadUrls();
+        await loadStats();
+      } else {
+        msg.textContent = data.error || 'Failed to add URL.';
+        msg.className = 'msg-error';
+      }
+    } catch {
+      msg.textContent = 'Network error.';
+      msg.className = 'msg-error';
+    }
+  });
+
+  // ===== DELETE URL =====
+  async function deleteUrl(event, id) {
+    event.stopPropagation();
+    if (!confirm('Remove this URL from monitoring?')) return;
+    try {
+      const res = await fetch(`/api/dashboard/urls/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        if (selectedUrlId === id) {
+          selectedUrlId = null;
+          clearChart();
+        }
+        await loadUrls();
+        await loadStats();
+      }
+    } catch { /* silent */ }
+  }
+
+  // ===== SELECT URL / CHART =====
+  async function selectUrl(id) {
+    selectedUrlId = id;
+    // Re-render to highlight selected row
+    renderUrls(urlsData);
+
+    const urlData = urlsData.find(u => u.id === id);
+    document.getElementById('chart-url-label').textContent =
+      urlData ? (urlData.label || urlData.url) : '';
+
+    document.getElementById('chart-placeholder').style.display = 'flex';
+    document.getElementById('chart-placeholder').textContent = 'Loading history…';
+    document.getElementById('price-chart').style.display = 'none';
+
+    try {
+      const res = await fetch(`/api/dashboard/urls/${id}/history`);
+      if (!res.ok) throw new Error('Failed');
+      const { history } = await res.json();
+
+      if (!history || history.length === 0) {
+        document.getElementById('chart-placeholder').textContent = 'No price history yet for this URL.';
+        return;
+      }
+
+      renderChart(history);
+    } catch {
+      document.getElementById('chart-placeholder').textContent = 'Failed to load history.';
+    }
+  }
+
+  function renderChart(history) {
+    const labels = history.map(h => {
+      const d = new Date(h.recorded_at);
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    });
+    const prices = history.map(h => h.price);
+
+    document.getElementById('chart-placeholder').style.display = 'none';
+    const canvas = document.getElementById('price-chart');
+    canvas.style.display = 'block';
+
+    if (chartInstance) {
+      chartInstance.destroy();
+    }
+
+    const ctx = canvas.getContext('2d');
+    chartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Price',
+          data: prices,
+          borderColor: '#4F8CFF',
+          backgroundColor: 'rgba(79, 140, 255, 0.1)',
+          borderWidth: 2,
+          pointBackgroundColor: '#4F8CFF',
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          fill: true,
+          tension: 0.3,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#121830',
+            borderColor: '#1E2740',
+            borderWidth: 1,
+            titleColor: '#E2E8F0',
+            bodyColor: '#94A3B8',
+            callbacks: {
+              label: ctx => ' $' + Number(ctx.parsed.y).toFixed(2),
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#94A3B8', font: { size: 11 }, maxTicksLimit: 8 },
+            grid: { color: '#1E2740' },
+          },
+          y: {
+            ticks: {
+              color: '#94A3B8',
+              font: { size: 11 },
+              callback: v => '$' + Number(v).toFixed(2),
+            },
+            grid: { color: '#1E2740' },
+          },
+        },
+      },
+    });
+  }
+
+  function clearChart() {
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    document.getElementById('chart-placeholder').style.display = 'flex';
+    document.getElementById('chart-placeholder').textContent = 'Click a row to see price history';
+    document.getElementById('price-chart').style.display = 'none';
+    document.getElementById('chart-url-label').textContent = 'Select a row to view history';
+  }
+
+  // ===== UTILS =====
+  function escHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ===== START =====
+  init();
+</script>
+
+</body>
+</html>
