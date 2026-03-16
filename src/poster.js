@@ -6,20 +6,26 @@
 import { TwitterApi } from 'twitter-api-v2';
 import { getDb } from './db.js';
 
-const client = new TwitterApi({
-  appKey: process.env.X_CONSUMER_KEY,
-  appSecret: process.env.X_CONSUMER_SECRET,
-  accessToken: process.env.X_ACCESS_TOKEN,
-  accessSecret: process.env.X_ACCESS_SECRET,
-});
+let rwClient = null;
 
-const rwClient = client.readWrite;
+function getTwitterClient() {
+  if (!rwClient) {
+    const client = new TwitterApi({
+      appKey: process.env.X_CONSUMER_KEY,
+      appSecret: process.env.X_CONSUMER_SECRET,
+      accessToken: process.env.X_ACCESS_TOKEN,
+      accessSecret: process.env.X_ACCESS_SECRET,
+    });
+    rwClient = client.readWrite;
+  }
+  return rwClient;
+}
 
 /**
  * Post a tweet. Returns the tweet ID on success.
  */
 export async function postTweet(text) {
-  const { data } = await rwClient.v2.tweet(text);
+  const { data } = await getTwitterClient().v2.tweet(text);
   return data.id;
 }
 
