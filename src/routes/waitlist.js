@@ -1,4 +1,5 @@
 import db from '../db.js';
+import { sendWelcomeEmail } from '../mailer.js';
 
 export default async function waitlistRoutes(fastify) {
   fastify.post('/api/waitlist', async (request, reply) => {
@@ -16,6 +17,11 @@ export default async function waitlistRoutes(fastify) {
       }
       throw err;
     }
+
+    // Send welcome email (non-blocking)
+    sendWelcomeEmail({ to: email }).catch(err =>
+      console.error('[waitlist] Failed to send welcome email:', err.message)
+    );
 
     return reply.status(201).send({ success: true, email });
   });
