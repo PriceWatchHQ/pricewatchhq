@@ -254,11 +254,10 @@
   <h1>Know when prices change. <em>Instantly.</em></h1>
   <p>Monitor competitor prices across the web. Get alerts the moment something changes so you can stay ahead.</p>
 
-  <form class="waitlist-form" id="waitlist-form">
-    <input type="email" name="email" placeholder="you@example.com" required />
-    <button type="submit">Join the Waitlist</button>
-    <div id="waitlist-msg"></div>
-  </form>
+  <div class="waitlist-form">
+    <a href="/dashboard" class="btn" style="font-size:1.1em; padding: 14px 36px;">Start Monitoring Prices →</a>
+    <p style="color: var(--text-muted); margin-top: 12px; font-size: 0.9em;">No credit card required to get started. Plans from $49/mo.</p>
+  </div>
 </section>
 
 <section class="features">
@@ -290,7 +289,7 @@
         <li>Email alerts</li>
         <li>7-day price history</li>
       </ul>
-      <a class="btn" href="#waitlist-form">Get Started</a>
+      <a class="btn" href="/pricing">Get Started</a>
     </div>
 
     <div class="price-card popular">
@@ -303,7 +302,7 @@
         <li>90-day price history</li>
         <li>CSV export</li>
       </ul>
-      <a class="btn" href="#waitlist-form">Get Started</a>
+      <a class="btn" href="/pricing">Get Started</a>
     </div>
 
     <div class="price-card">
@@ -317,7 +316,7 @@
         <li>API access</li>
         <li>Priority support</li>
       </ul>
-      <a class="btn" href="#waitlist-form">Get Started</a>
+      <a class="btn" href="/pricing">Get Started</a>
     </div>
   </div>
 </section>
@@ -326,41 +325,7 @@
   &copy; 2026 PriceWatch HQ. All rights reserved.
 </footer>
 
-<script>
-  const form = document.getElementById('waitlist-form');
-  const msg = document.getElementById('waitlist-msg');
 
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    msg.textContent = '';
-    msg.className = '';
-
-    const email = form.email.value.trim();
-    if (!email) return;
-
-    try {
-      const res = await fetch('/api/waitlist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        msg.textContent = "You're on the list! We'll be in touch soon.";
-        msg.className = 'msg-success';
-        form.email.value = '';
-      } else {
-        msg.textContent = data.error || 'Something went wrong.';
-        msg.className = 'msg-error';
-      }
-    } catch {
-      msg.textContent = 'Network error. Please try again.';
-      msg.className = 'msg-error';
-    }
-  });
-</script>
 
 </body>
 </html>
