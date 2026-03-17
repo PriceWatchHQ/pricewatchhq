@@ -742,8 +742,12 @@
     try {
       const res = await fetch('https://pricewatchhq-production.up.railway.app/api/dashboard/stats');
       if (!res.ok) return;
-      const { totalUrls, totalChecks, totalAlerts } = await res.json();
-      document.getElementById('stat-urls').textContent = totalUrls;
+      const { totalUrls, totalChecks, totalAlerts, urlLimit } = await res.json();
+      if (urlLimit != null) {
+        document.getElementById('stat-urls').textContent = `${totalUrls} / ${urlLimit}`;
+      } else {
+        document.getElementById('stat-urls').textContent = totalUrls;
+      }
       document.getElementById('stat-checks').textContent = totalChecks;
       document.getElementById('stat-alerts').textContent = totalAlerts;
     } catch { /* silent */ }
@@ -772,6 +776,9 @@
         document.getElementById('add-url').value = '';
         await loadUrls();
         await loadStats();
+      } else if (res.status === 403 && data.error && data.error.includes('URL limit reached')) {
+        msg.innerHTML = `You've reached your free plan limit (3 URLs). <a href="/pricing" style="color:var(--accent)">Upgrade to add more.</a>`;
+        msg.className = 'msg-error';
       } else {
         msg.textContent = data.error || 'Failed to add URL.';
         msg.className = 'msg-error';

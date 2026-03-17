@@ -1,4 +1,5 @@
 import db from '../db.js';
+import { PLAN_LIMITS } from '../plans.js';
 
 // Middleware: check session cookie
 function getSession(req) {
@@ -85,6 +86,18 @@ export default async function dashboardRoutes(app) {
       return reply.status(400).send({ error: 'Invalid URL' });
     }
 
+    // Check plan URL limit
+    const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(session.user_id);
+    const plan = (user?.plan || 'free');
+    const limit = PLAN_LIMITS[plan]?.urls ?? PLAN_LIMITS.free.urls;
+    const currentCount = db.prepare(
+      'SELECT COUNT(*) as count FROM watched_urls WHERE user_id = ?'
+    ).get(session.user_id).count;
+
+    if (currentCount >= limit) {
+      return reply.status(403).send({ error: 'URL limit reached for your plan. Upgrade to add more.' });
+    }
+
     const result = db.prepare(`
       INSERT INTO watched_urls (user_id, url, label, created_at)
       VALUES (?, ?, ?, datetime('now'))
@@ -132,6 +145,11 @@ export default async function dashboardRoutes(app) {
     // Alerts sent: placeholder (no alerts table yet)
     const totalAlerts = 0;
 
-    return reply.send({ totalUrls, totalChecks, totalAlerts });
+    // Plan limit
+    const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(session.user_id);
+    const plan = (user?.plan || 'free');
+    const urlLimit = PLAN_LIMITS[plan]?.urls ?? PLAN_LIMITS.free.urls;
+
+    return reply.send({ totalUrls, totalChecks, totalAlerts, urlLimit, plan });
   });
 }

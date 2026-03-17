@@ -3,21 +3,38 @@ import db from './db.js';
 import { scrapePrice } from './scraper.js';
 import { runPoster } from './poster.js';
 import { sendPriceAlert } from './mailer.js';
+import { PLAN_LIMITS } from './plans.js';
 
 /**
- * Start the hourly price-check cron job.
- * Iterates every watched URL, scrapes the current price,
- * logs it to price_history, and alerts on changes.
+ * Start the price-check cron job (every 15 minutes).
+ * Respects each user's plan check frequency before scraping.
  */
 export function startScheduler() {
-  // Run every hour at minute 0
-  cron.schedule('0 * * * *', async () => {
+  // Run every 15 minutes; each URL is checked only when its plan allows
+  cron.schedule('*/15 * * * *', async () => {
     console.log(`[scheduler] Price check started at ${new Date().toISOString()}`);
 
     const urls = db.prepare('SELECT * FROM watched_urls').all();
+    const now = Date.now();
 
     for (const entry of urls) {
       try {
+        // Get user plan to determine check frequency
+        const user = entry.user_id
+          ? db.prepare('SELECT plan FROM users WHERE id = ?').get(entry.user_id)
+          : null;
+        const plan = user?.plan || 'free';
+        const freqMinutes = PLAN_LIMITS[plan]?.checkFreqMinutes ?? PLAN_LIMITS.free.checkFreqMinutes;
+        const freqMs = freqMinutes * 60 * 1000;
+
+        // Skip if not enough time has passed since last check
+        if (entry.last_checked_at) {
+          const lastChecked = new Date(entry.last_checked_at).getTime();
+          if (now - lastChecked < freqMs) {
+            continue;
+          }
+        }
+
         const price = await scrapePrice(entry.url);
 
         if (price === null) {
@@ -40,10 +57,10 @@ export function startScheduler() {
 
           // Get user email and send alert
           if (entry.user_id) {
-            const user = db.prepare('SELECT email FROM users WHERE id = ?').get(entry.user_id);
-            if (user?.email) {
+            const userWithEmail = db.prepare('SELECT email FROM users WHERE id = ?').get(entry.user_id);
+            if (userWithEmail?.email) {
               sendPriceAlert({
-                to: user.email,
+                to: userWithEmail.email,
                 label: entry.label,
                 url: entry.url,
                 oldPrice: entry.last_price,
@@ -65,7 +82,7 @@ export function startScheduler() {
     console.log(`[scheduler] Price check complete.`);
   });
 
-  console.log('[scheduler] Hourly price check scheduled.');
+  console.log('[scheduler] Price check scheduled (every 15 min, respecting plan frequencies)');
 
   // Check for scheduled X posts every 15 minutes
   cron.schedule('*/15 * * * *', async () => {
