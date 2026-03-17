@@ -490,6 +490,114 @@
       min-height: 1.2em;
     }
 
+    /* API Access card */
+    .api-access-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+    .api-access-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+    .api-access-card .api-upgrade-msg {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+    .api-access-card .api-upgrade-msg a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .api-keys-list {
+      display: grid;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+    }
+    .api-key-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      background: var(--navy);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem 1rem;
+      font-size: 0.875rem;
+    }
+    .api-key-row .key-info { display: flex; flex-direction: column; gap: 0.15rem; }
+    .api-key-row .key-name { color: #fff; font-weight: 600; }
+    .api-key-row .key-preview { color: var(--text-muted); font-family: monospace; font-size: 0.82rem; }
+    .api-key-row .key-date { color: var(--text-muted); font-size: 0.78rem; }
+    .api-key-row .btn-delete-key {
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--red);
+      font-size: 0.8rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+    .api-key-row .btn-delete-key:hover { background: rgba(248, 113, 113, 0.1); }
+    .api-create-form {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .api-create-form input[type="text"] {
+      flex: 1;
+      min-width: 160px;
+      padding: 0.7rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--navy);
+      color: #fff;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .api-create-form input[type="text"]:focus { border-color: var(--accent); }
+    .api-create-form input::placeholder { color: var(--text-muted); }
+    .api-create-form .btn-create-key {
+      padding: 0.7rem 1.25rem;
+      border-radius: 8px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+    .api-create-form .btn-create-key:hover { background: var(--accent-hover); }
+    #api-keys-msg { font-size: 0.85rem; min-height: 1.2em; margin-bottom: 0.5rem; }
+    .api-example {
+      background: var(--navy);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 0.5rem;
+    }
+    .api-example p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+    .api-example pre {
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: var(--green);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
     /* Chart card */
     .chart-card {
       background: var(--card-bg);
@@ -659,6 +767,14 @@
       </form>
     </div>
 
+    <!-- API Access -->
+    <div class="api-access-card" id="api-access-card">
+      <h3>🔑 API Access</h3>
+      <div id="api-access-content">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
     <!-- Price history chart -->
     <div class="chart-card">
       <div class="chart-card-header">
@@ -721,6 +837,7 @@
     loadUrls();
     loadStats();
     loadAlertSettings();
+    loadApiKeys();
   }
 
   // ===== LOGIN =====
@@ -1064,6 +1181,103 @@
       msg.className = 'msg-error';
     }
   });
+
+  // ===== API KEYS =====
+  async function loadApiKeys() {
+    const container = document.getElementById('api-access-content');
+    const plan = currentUser?.plan || 'free';
+
+    if (plan !== 'business') {
+      container.innerHTML = `
+        <p class="api-upgrade-msg">
+          API access is available on the <strong>Business plan</strong>.
+          <a href="/pricing">Upgrade to Business →</a>
+        </p>`;
+      return;
+    }
+
+    container.innerHTML = '<span class="spinner"></span>';
+
+    try {
+      const res = await fetch('https://pricewatchhq-production.up.railway.app/api/dashboard/api-keys');
+      if (!res.ok) throw new Error('Failed');
+      const { keys } = await res.json();
+      renderApiKeys(keys);
+    } catch {
+      container.innerHTML = '<p style="color:var(--red);font-size:0.9rem">Failed to load API keys.</p>';
+    }
+  }
+
+  function renderApiKeys(keys) {
+    const container = document.getElementById('api-access-content');
+    const list = keys.length > 0
+      ? `<div class="api-keys-list">
+          ${keys.map(k => {
+            const preview = k.key.slice(0, 8 + 9) + '...'; // "pwq_live_" is 9 chars + 8 hex = 17
+            const date = new Date(k.created_at).toLocaleDateString();
+            return `<div class="api-key-row">
+              <div class="key-info">
+                <span class="key-name">${escHtml(k.name || 'Unnamed key')}</span>
+                <span class="key-preview">${escHtml(preview)}</span>
+                <span class="key-date">Created ${date}</span>
+              </div>
+              <button class="btn-delete-key" onclick="deleteApiKey(${k.id})">Delete</button>
+            </div>`;
+          }).join('')}
+        </div>`
+      : '<p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1rem">No API keys yet. Create one below.</p>';
+
+    container.innerHTML = `
+      ${list}
+      <div id="api-keys-msg"></div>
+      <form class="api-create-form" id="api-create-form">
+        <input type="text" id="api-key-name" placeholder="Key name (e.g. My App)" />
+        <button type="submit" class="btn-create-key">+ Create API Key</button>
+      </form>
+      <div class="api-example">
+        <p>Example usage:</p>
+        <pre>curl -H "Authorization: Bearer pwq_live_xxx" \\
+  https://pricewatchhq-production.up.railway.app/api/v1/urls</pre>
+      </div>`;
+
+    document.getElementById('api-create-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('api-key-name').value.trim();
+      const msg = document.getElementById('api-keys-msg');
+      msg.textContent = 'Creating…';
+      msg.className = '';
+
+      try {
+        const res = await fetch('https://pricewatchhq-production.up.railway.app/api/dashboard/api-keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          msg.innerHTML = `✅ API key created: <code style="font-family:monospace;color:var(--green)">${escHtml(data.key)}</code> — copy it now, it won't be shown again.`;
+          msg.className = 'msg-success';
+          setTimeout(() => loadApiKeys(), 2000);
+        } else {
+          msg.textContent = data.error || 'Failed to create key.';
+          msg.className = 'msg-error';
+        }
+      } catch {
+        msg.textContent = 'Network error.';
+        msg.className = 'msg-error';
+      }
+    });
+  }
+
+  async function deleteApiKey(id) {
+    if (!confirm('Delete this API key? Any apps using it will stop working.')) return;
+    try {
+      const res = await fetch(`https://pricewatchhq-production.up.railway.app/api/dashboard/api-keys/${id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) await loadApiKeys();
+    } catch { /* silent */ }
+  }
 
   // ===== START =====
   init();

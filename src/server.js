@@ -12,6 +12,8 @@ import waitlistRoutes from './routes/waitlist.js';
 import authRoutes from './routes/auth.js';
 import dashboardRoutes from './routes/dashboard.js';
 import billingRoutes from './routes/billing.js';
+import apiKeyRoutes from './routes/api-keys.js';
+import publicApiRoutes from './routes/public-api.js';
 import { startScheduler } from './scheduler.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -67,6 +69,8 @@ app.register(waitlistRoutes);
 app.register(authRoutes);
 app.register(dashboardRoutes);
 app.register(billingRoutes);
+app.register(apiKeyRoutes);
+app.register(publicApiRoutes);
 
 // Start server
 try {
