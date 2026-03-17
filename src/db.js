@@ -99,6 +99,13 @@ if (!userCols.includes('plan')) {
 if (!userCols.includes('plan_expires_at')) {
   db.exec(`ALTER TABLE users ADD COLUMN plan_expires_at INTEGER`);
 }
+// Add alert settings columns to users if they don't exist (migrations)
+if (!userCols.includes('slack_webhook_url')) {
+  db.exec(`ALTER TABLE users ADD COLUMN slack_webhook_url TEXT`);
+}
+if (!userCols.includes('phone_number')) {
+  db.exec(`ALTER TABLE users ADD COLUMN phone_number TEXT`);
+}
 
 export default db;
 export function getDb() { return db; }

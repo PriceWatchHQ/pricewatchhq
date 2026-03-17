@@ -20,6 +20,7 @@
     "node-fetch": "^3.3.2",
     "resend": "^6.9.4",
     "stripe": "^20.4.1",
+    "twilio": "^5.13.0",
     "twitter-api-v2": "^1.29.0"
   }
 }

@@ -422,6 +422,74 @@
       font-size: 0.95rem;
     }
 
+    /* Alert settings card */
+    .alert-settings-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+    .alert-settings-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 1rem;
+    }
+    .alert-settings-form {
+      display: grid;
+      gap: 1rem;
+    }
+    .alert-settings-form .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .alert-settings-form label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .alert-settings-form input[type="text"],
+    .alert-settings-form input[type="tel"],
+    .alert-settings-form input[type="url"] {
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--navy);
+      color: #fff;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .alert-settings-form input:focus { border-color: var(--accent); }
+    .alert-settings-form input::placeholder { color: var(--text-muted); }
+    .alert-settings-form input:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .alert-settings-form .upgrade-note {
+      font-size: 0.8rem;
+      color: #F59E0B;
+      margin-top: 0.2rem;
+    }
+    .alert-settings-form .btn-save {
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      align-self: flex-start;
+      transition: background 0.2s;
+    }
+    .alert-settings-form .btn-save:hover { background: var(--accent-hover); }
+    #settings-msg {
+      font-size: 0.85rem;
+      min-height: 1.2em;
+    }
+
     /* Chart card */
     .chart-card {
       background: var(--card-bg);
@@ -572,6 +640,25 @@
       </div>
     </div>
 
+    <!-- Alert Settings -->
+    <div class="alert-settings-card">
+      <h3>Alert Settings</h3>
+      <form class="alert-settings-form" id="alert-settings-form">
+        <div class="field-group">
+          <label for="settings-phone">📱 Phone Number <span style="color:var(--text-muted);font-weight:400">(SMS alerts — Pro &amp; Business)</span></label>
+          <input type="tel" id="settings-phone" placeholder="+15551234567" />
+          <span class="upgrade-note" id="sms-upgrade-note" style="display:none">Upgrade to Pro to receive SMS alerts.</span>
+        </div>
+        <div class="field-group">
+          <label for="settings-slack">💬 Slack Webhook URL <span style="color:var(--text-muted);font-weight:400">(Business only)</span></label>
+          <input type="url" id="settings-slack" placeholder="https://hooks.slack.com/services/..." />
+          <span class="upgrade-note" id="slack-upgrade-note" style="display:none">Upgrade to Business to receive Slack alerts.</span>
+        </div>
+        <button type="submit" class="btn-save">Save Settings</button>
+        <div id="settings-msg"></div>
+      </form>
+    </div>
+
     <!-- Price history chart -->
     <div class="chart-card">
       <div class="chart-card-header">
@@ -633,6 +720,7 @@
 
     loadUrls();
     loadStats();
+    loadAlertSettings();
   }
 
   // ===== LOGIN =====
@@ -920,6 +1008,62 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
   }
+
+  // ===== ALERT SETTINGS =====
+  async function loadAlertSettings() {
+    try {
+      const res = await fetch('https://pricewatchhq-production.up.railway.app/api/dashboard/settings');
+      if (!res.ok) return;
+      const { slack_webhook_url, phone_number, plan } = await res.json();
+
+      const phoneInput = document.getElementById('settings-phone');
+      const slackInput = document.getElementById('settings-slack');
+      const smsNote = document.getElementById('sms-upgrade-note');
+      const slackNote = document.getElementById('slack-upgrade-note');
+
+      phoneInput.value = phone_number || '';
+      slackInput.value = slack_webhook_url || '';
+
+      // Show upgrade notes and disable inputs if plan doesn't support
+      if (plan === 'free' || plan === 'starter') {
+        phoneInput.disabled = true;
+        smsNote.style.display = 'block';
+      }
+      if (plan === 'free' || plan === 'starter' || plan === 'pro') {
+        slackInput.disabled = true;
+        slackNote.style.display = 'block';
+      }
+    } catch { /* silent */ }
+  }
+
+  document.getElementById('alert-settings-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('settings-msg');
+    msg.textContent = 'Saving…';
+    msg.className = '';
+
+    const phone_number = document.getElementById('settings-phone').value.trim() || null;
+    const slack_webhook_url = document.getElementById('settings-slack').value.trim() || null;
+
+    try {
+      const res = await fetch('https://pricewatchhq-production.up.railway.app/api/dashboard/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number, slack_webhook_url }),
+      });
+      if (res.ok) {
+        msg.textContent = '✅ Settings saved!';
+        msg.className = 'msg-success';
+      } else {
+        const data = await res.json();
+        msg.textContent = data.error || 'Failed to save settings.';
+        msg.className = 'msg-error';
+      }
+    } catch {
+      msg.textContent = 'Network error.';
+      msg.className = 'msg-error';
+    }
+  });
 
   // ===== START =====
   init();

@@ -122,6 +122,40 @@ export default async function dashboardRoutes(app) {
     return reply.send({ ok: true });
   });
 
+  // GET /api/dashboard/settings — get user's alert settings
+  app.get('/api/dashboard/settings', async (req, reply) => {
+    const session = getSession(req);
+    if (!session) return reply.status(401).send({ error: 'Not authenticated' });
+
+    const user = db.prepare(
+      'SELECT slack_webhook_url, phone_number, plan FROM users WHERE id = ?'
+    ).get(session.user_id);
+
+    return reply.send({
+      slack_webhook_url: user?.slack_webhook_url || null,
+      phone_number: user?.phone_number || null,
+      plan: user?.plan || 'free',
+    });
+  });
+
+  // POST /api/dashboard/settings — update user's alert settings
+  app.post('/api/dashboard/settings', async (req, reply) => {
+    const session = getSession(req);
+    if (!session) return reply.status(401).send({ error: 'Not authenticated' });
+
+    const { slack_webhook_url, phone_number } = req.body || {};
+
+    db.prepare(
+      'UPDATE users SET slack_webhook_url = ?, phone_number = ? WHERE id = ?'
+    ).run(
+      slack_webhook_url !== undefined ? slack_webhook_url : null,
+      phone_number !== undefined ? phone_number : null,
+      session.user_id
+    );
+
+    return reply.send({ ok: true });
+  });
+
   // GET /api/dashboard/stats — overall stats for the user
   app.get('/api/dashboard/stats', async (req, reply) => {
     const session = getSession(req);

@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import db from './db.js';
 import { scrapePrice } from './scraper.js';
 import { runPoster } from './poster.js';
-import { sendPriceAlert } from './mailer.js';
+import { sendPriceAlert, sendSlackAlert, sendSmsAlert } from './mailer.js';
 import { PLAN_LIMITS } from './plans.js';
 
 /**
@@ -55,17 +55,36 @@ export function startScheduler() {
             `$${entry.last_price} → $${price}`
           );
 
-          // Get user email and send alert
+          // Get user and send alerts based on plan
           if (entry.user_id) {
-            const userWithEmail = db.prepare('SELECT email FROM users WHERE id = ?').get(entry.user_id);
-            if (userWithEmail?.email) {
-              sendPriceAlert({
-                to: userWithEmail.email,
+            const user = db.prepare(
+              'SELECT email, plan, phone_number, slack_webhook_url FROM users WHERE id = ?'
+            ).get(entry.user_id);
+
+            if (user?.email) {
+              const alertArgs = {
                 label: entry.label,
                 url: entry.url,
                 oldPrice: entry.last_price,
                 newPrice: price,
-              }).catch(err => console.error('[mailer] Failed to send alert:', err.message));
+              };
+              const plan = user.plan || 'free';
+
+              // All plans: email
+              sendPriceAlert({ to: user.email, ...alertArgs })
+                .catch(err => console.error('[mailer] Failed to send email alert:', err.message));
+
+              // Pro+: SMS
+              if ((plan === 'pro' || plan === 'business') && user.phone_number) {
+                sendSmsAlert({ to: user.phone_number, ...alertArgs })
+                  .catch(err => console.error('[mailer] Failed to send SMS alert:', err.message));
+              }
+
+              // Business: Slack
+              if (plan === 'business' && user.slack_webhook_url) {
+                sendSlackAlert({ webhookUrl: user.slack_webhook_url, ...alertArgs })
+                  .catch(err => console.error('[mailer] Failed to send Slack alert:', err.message));
+              }
             }
           }
         }

@@ -1,5 +1,5 @@
 /**
- * mailer.js — Email alerts via Resend
+ * mailer.js — Email alerts via Resend, Slack webhooks, and SMS via Twilio
  */
 
 import { Resend } from 'resend';
@@ -10,6 +10,17 @@ function getResend() {
   return _resend;
 }
 const FROM = () => process.env.EMAIL_FROM || 'alerts@pricewatchhq.com';
+
+let _twilioClient = null;
+async function getTwilio() {
+  if (_twilioClient) return _twilioClient;
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const auth = process.env.TWILIO_AUTH_TOKEN;
+  if (!sid || !auth || sid === 'your_twilio_sid') return null;
+  const { default: twilio } = await import('twilio');
+  _twilioClient = twilio(sid, auth);
+  return _twilioClient;
+}
 
 /**
  * Send a price change alert email.
@@ -135,4 +146,82 @@ export async function sendMagicLinkEmail({ to, loginUrl }) {
   });
 
   console.log(`[mailer] Magic link sent to ${to}`);
+}
+
+/**
+ * Send a Slack webhook alert for a price change.
+ */
+export async function sendSlackAlert({ webhookUrl, label, url, oldPrice, newPrice }) {
+  if (!webhookUrl) return;
+
+  const direction = newPrice < oldPrice ? 'dropped 📉' : 'increased 📈';
+  const pct = (Math.abs(newPrice - oldPrice) / oldPrice * 100).toFixed(1);
+  const sign = newPrice < oldPrice ? '-' : '+';
+  const color = newPrice < oldPrice ? '#34D399' : '#F87171';
+
+  const payload = {
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*PriceWatch Alert* 🔔\nPrice *${direction}* for *${label || url}*`,
+        },
+      },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `*Previous Price*\n$${Number(oldPrice).toFixed(2)}` },
+          { type: 'mrkdwn', text: `*New Price*\n$${Number(newPrice).toFixed(2)} (${sign}${pct}%)` },
+        ],
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'View Product →' },
+            url,
+          },
+        ],
+      },
+    ],
+    attachments: [{ color }],
+  };
+
+  const res = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Slack webhook failed: ${res.status}`);
+  }
+
+  console.log(`[mailer] Slack alert sent for ${label || url}`);
+}
+
+/**
+ * Send an SMS alert via Twilio for a price change.
+ */
+export async function sendSmsAlert({ to, label, url, oldPrice, newPrice }) {
+  if (!to) return;
+
+  const client = await getTwilio();
+  if (!client) {
+    console.warn('[mailer] Twilio not configured — skipping SMS alert');
+    return;
+  }
+
+  const pct = (Math.abs(newPrice - oldPrice) / oldPrice * 100).toFixed(1);
+  const body = `PriceWatch Alert: ${label || url} price changed $${Number(oldPrice).toFixed(2)} → $${Number(newPrice).toFixed(2)} (${pct}%). View: ${url}`;
+
+  await client.messages.create({
+    body,
+    from: process.env.TWILIO_PHONE_NUMBER,
+    to,
+  });
+
+  console.log(`[mailer] SMS alert sent to ${to} for ${label || url}`);
 }
