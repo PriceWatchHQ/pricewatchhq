@@ -78,7 +78,8 @@ export default async function authRoutes(app) {
       httpOnly: true,
       path: '/',
       maxAge: SESSION_TTL / 1000,
-      sameSite: 'lax',
+      sameSite: 'none',
+      secure: true,
     });
 
     return reply.redirect('/dashboard');
