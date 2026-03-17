@@ -596,7 +596,7 @@
   // ===== INIT =====
   async function init() {
     try {
-      const res = await fetch('/api/auth/me');
+      const res = await fetch('https://pricewatchhq-production.up.railway.app/api/auth/me');
       if (res.ok) {
         const { user } = await res.json();
         currentUser = user;
@@ -650,7 +650,7 @@
     const email = document.getElementById('login-email').value.trim();
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch('https://pricewatchhq-production.up.railway.app/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -673,7 +673,7 @@
 
   // ===== LOGOUT =====
   document.getElementById('logout-btn').addEventListener('click', async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await fetch('https://pricewatchhq-production.up.railway.app/api/auth/logout', { method: 'POST' });
     currentUser = null;
     urlsData = [];
     selectedUrlId = null;
@@ -685,7 +685,7 @@
   async function loadUrls() {
     document.getElementById('urls-loading').innerHTML = '<span class="spinner"></span>';
     try {
-      const res = await fetch('/api/dashboard/urls');
+      const res = await fetch('https://pricewatchhq-production.up.railway.app/api/dashboard/urls');
       if (!res.ok) throw new Error('Failed');
       const { urls } = await res.json();
       urlsData = urls;
@@ -740,7 +740,7 @@
   // ===== LOAD STATS =====
   async function loadStats() {
     try {
-      const res = await fetch('/api/dashboard/stats');
+      const res = await fetch('https://pricewatchhq-production.up.railway.app/api/dashboard/stats');
       if (!res.ok) return;
       const { totalUrls, totalChecks, totalAlerts } = await res.json();
       document.getElementById('stat-urls').textContent = totalUrls;
@@ -759,7 +759,7 @@
     msg.className = '';
 
     try {
-      const res = await fetch('/api/dashboard/urls', {
+      const res = await fetch('https://pricewatchhq-production.up.railway.app/api/dashboard/urls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ label, url }),

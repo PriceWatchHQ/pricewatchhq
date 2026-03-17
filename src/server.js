@@ -2,6 +2,7 @@ import 'dotenv/config';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyCookie from '@fastify/cookie';
+import fastifyCors from '@fastify/cors';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -38,6 +39,10 @@ app.addContentTypeParser('*', { parseAs: 'buffer' }, (req, body, done) => {
 });
 
 // Cookie support
+app.register(fastifyCors, {
+  origin: ['https://pricewatchhq.com', 'https://www.pricewatchhq.com'],
+  credentials: true,
+});
 app.register(fastifyCookie);
 
 // Serve the landing page and static assets
