@@ -142,8 +142,8 @@ app.get('/go/checkout', async (req, reply) => {
 
     return reply.redirect(checkoutSession.url);
   } catch (err) {
-    console.error('[checkout] FULL ERROR:', err);
-    return reply.send({ error: err.message, stack: err.stack });
+    console.error('[checkout]', err.message);
+    return reply.redirect('/pricing?error=1');
   }
 });
 
