@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms of Service — PriceWatch HQ</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --navy: #0A0F1E;
+      --navy-light: #121830;
+      --accent: #4F8CFF;
+      --accent-hover: #3A6FDB;
+      --text: #E2E8F0;
+      --text-muted: #94A3B8;
+      --card-bg: #151B30;
+      --border: #1E2740;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--navy);
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    /* NAV */
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #fff;
+      text-decoration: none;
+    }
+    .logo span { color: var(--accent); }
+    nav a.back-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+    nav a.back-link:hover { color: var(--accent-hover); }
+
+    /* CONTENT */
+    .content {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 4rem 2rem 6rem;
+    }
+
+    .page-header {
+      margin-bottom: 2.5rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .page-header h1 {
+      font-size: 2.25rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+    .page-header .effective-date {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    section {
+      margin-bottom: 2.5rem;
+    }
+    h2 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    p {
+      color: var(--text);
+      margin-bottom: 0.75rem;
+      font-size: 0.97rem;
+    }
+    ul {
+      list-style: none;
+      margin: 0.5rem 0 0.75rem 0;
+    }
+    ul li {
+      color: var(--text);
+      font-size: 0.97rem;
+      padding: 0.25rem 0;
+      padding-left: 1.25rem;
+      position: relative;
+    }
+    ul li::before {
+      content: "–";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
+    .plan-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    .plan-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem;
+    }
+    .plan-card .plan-name {
+      font-weight: 700;
+      color: #fff;
+      font-size: 1rem;
+      margin-bottom: 0.25rem;
+    }
+    .plan-card .plan-price {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .plan-card .plan-price span {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover { text-decoration: underline; }
+
+    /* FOOTER */
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a href="/" class="logo">PriceWatch<span>HQ</span></a>
+    <a href="/" class="back-link">← Back to Home</a>
+  </nav>
+
+  <div class="content">
+    <div class="page-header">
+      <h1>Terms of Service</h1>
+      <p class="effective-date">Effective Date: March 16, 2026 &nbsp;·&nbsp; PriceWatch HQ is operated by Whole Value LLC</p>
+    </div>
+
+    <section>
+      <h2>Agreement</h2>
+      <p>By creating an account or using PriceWatch HQ ("the Service"), you agree to these Terms of Service ("Terms"). If you do not agree, do not use the Service. These Terms constitute a binding agreement between you and Whole Value LLC, the company that operates PriceWatch HQ.</p>
+    </section>
+
+    <section>
+      <h2>Service Description</h2>
+      <p>PriceWatch HQ is a competitor price monitoring platform. You submit product URLs, and we periodically scrape those pages to track price changes and alert you when prices shift. The Service is designed for business use to help you stay informed about competitor pricing.</p>
+    </section>
+
+    <section>
+      <h2>Subscription Plans &amp; Billing</h2>
+      <p>PriceWatch HQ is a subscription service billed monthly. Current plans:</p>
+      <div class="plan-grid">
+        <div class="plan-card">
+          <div class="plan-name">Starter</div>
+          <div class="plan-price">$49<span>/mo</span></div>
+        </div>
+        <div class="plan-card">
+          <div class="plan-name">Pro</div>
+          <div class="plan-price">$99<span>/mo</span></div>
+        </div>
+        <div class="plan-card">
+          <div class="plan-name">Business</div>
+          <div class="plan-price">$199<span>/mo</span></div>
+        </div>
+      </div>
+      <p>Billing occurs monthly on the date you subscribed. Prices are subject to change with 30 days' notice to your registered email address. All fees are in USD.</p>
+    </section>
+
+    <section>
+      <h2>Cancellation &amp; Refunds</h2>
+      <p>You may cancel your subscription at any time from your account dashboard. Cancellation takes effect at the end of your current billing period — you retain access through the period you've paid for.</p>
+      <p>We do not offer refunds for partial months or unused time in a billing period. If you believe there has been a billing error, contact us at <a href="mailto:support@pricewatchhq.com">support@pricewatchhq.com</a> within 30 days of the charge.</p>
+    </section>
+
+    <section>
+      <h2>SMS Alerts</h2>
+      <p>If you provide a phone number to receive SMS alerts, the following terms apply:</p>
+      <ul>
+        <li>SMS opt-in is voluntary — you may remove your phone number from your dashboard at any time</li>
+        <li>Message and data rates may apply depending on your mobile carrier and plan</li>
+        <li>Reply <strong>STOP</strong> to any SMS message to unsubscribe immediately from SMS alerts</li>
+        <li>Reply <strong>HELP</strong> to any SMS message for assistance, or contact <a href="mailto:support@pricewatchhq.com">support@pricewatchhq.com</a></li>
+        <li>SMS alerts are provided on a best-effort basis and may be delayed by carrier conditions</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>No Guarantee of Uptime or Accuracy</h2>
+      <p>PriceWatch HQ is provided on a <strong>best-effort basis</strong>. We do not guarantee:</p>
+      <ul>
+        <li>Continuous, uninterrupted availability of the Service</li>
+        <li>That price scraping will succeed for any given URL at any given time</li>
+        <li>The accuracy, completeness, or timeliness of scraped price data</li>
+        <li>That all websites can be or will continue to be monitored (sites may block scrapers at any time)</li>
+      </ul>
+      <p>We will make reasonable efforts to maintain the Service and notify you of scheduled downtime, but we are not liable for losses resulting from service interruptions or inaccurate data.</p>
+    </section>
+
+    <section>
+      <h2>Acceptable Use</h2>
+      <p>You agree to use PriceWatch HQ only for lawful purposes. You may not:</p>
+      <ul>
+        <li>Use the Service to violate any applicable law or regulation</li>
+        <li>Attempt to circumvent or interfere with the Service's infrastructure</li>
+        <li>Resell or sublicense access to the Service without prior written consent</li>
+        <li>Use the Service in ways that impose unreasonable load on our systems</li>
+      </ul>
+      <p>We reserve the right to suspend or terminate accounts that violate these terms.</p>
+    </section>
+
+    <section>
+      <h2>Limitation of Liability</h2>
+      <p>To the maximum extent permitted by law, Whole Value LLC and its affiliates shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the Service. Our total liability to you for any claim shall not exceed the amount you paid us in the 3 months preceding the claim.</p>
+    </section>
+
+    <section>
+      <h2>Changes to These Terms</h2>
+      <p>We may update these Terms from time to time. We'll notify you of material changes by email or by posting a notice on the site. Continued use of the Service after changes take effect constitutes acceptance of the updated Terms.</p>
+    </section>
+
+    <section>
+      <h2>Contact Us</h2>
+      <p>Questions about these Terms? Reach us at:</p>
+      <p>
+        <strong>PriceWatch HQ</strong> (operated by Whole Value LLC)<br>
+        Email: <a href="mailto:support@pricewatchhq.com">support@pricewatchhq.com</a>
+      </p>
+    </section>
+  </div>
+
+  <footer>
+    &copy; 2026 PriceWatch HQ · Operated by Whole Value LLC · <a href="/privacy.html">Privacy Policy</a> · <a href="/terms.html">Terms of Service</a>
+  </footer>
+
+</body>
+</html>
