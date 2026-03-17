@@ -359,12 +359,12 @@
 
 <div class="manage-section" id="manage-section" style="display:none;">
   <p>Already subscribed? Manage your billing, update your card, or cancel anytime.</p>
-  <a href="/api/billing/portal" class="btn-portal">Manage Subscription →</a>
+  <a href="https://pricewatchhq-production.up.railway.app/api/billing/portal" class="btn-portal">Manage Subscription →</a>
 </div>
 
 <script>
   // Check if user is logged in — show manage subscription button
-  fetch('/api/auth/me')
+  fetch('https://pricewatchhq-production.up.railway.app/api/auth/me')
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       if (data?.user) {
@@ -378,7 +378,7 @@
     msg.textContent = '';
 
     // Check auth first
-    const meRes = await fetch('/api/auth/me');
+    const meRes = await fetch('https://pricewatchhq-production.up.railway.app/api/auth/me');
     if (!meRes.ok) {
       // Redirect to dashboard (login screen)
       window.location.href = '/dashboard?redirect=pricing';
@@ -389,7 +389,7 @@
     btn.innerHTML = '<span class="spinner"></span> Redirecting…';
 
     try {
-      const res = await fetch('/api/billing/checkout', {
+      const res = await fetch('https://pricewatchhq-production.up.railway.app/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan }),
