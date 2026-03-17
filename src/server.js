@@ -6,6 +6,7 @@ import fastifyCors from '@fastify/cors';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
+import { getDb } from './db.js';
 import urlRoutes from './routes/urls.js';
 import priceRoutes from './routes/prices.js';
 import waitlistRoutes from './routes/waitlist.js';
@@ -73,6 +74,76 @@ app.get('/dashboard', (req, reply) => {
 // Serve pricing page
 app.get('/pricing', (req, reply) => {
   return reply.sendFile('pricing.html');
+});
+
+// Server-side checkout redirect — no JS/CORS needed
+app.get('/go/checkout', async (req, reply) => {
+  const { plan } = req.query;
+  if (!plan) return reply.redirect('/pricing');
+
+  // Check session cookie
+  const sessionToken = req.cookies?.session;
+  if (!sessionToken) {
+    return reply.redirect(`/dashboard?next=/go/checkout?plan=${plan}`);
+  }
+
+  const db = getDb();
+  const now = Date.now();
+  const session = db.prepare('SELECT * FROM sessions WHERE token = ? AND expires_at > ?').get(sessionToken, now);
+  if (!session) return reply.redirect(`/dashboard?next=/go/checkout?plan=${plan}`);
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(session.user_id);
+  if (!user) return reply.redirect('/dashboard');
+
+  const PLANS = { starter: true, pro: true, business: true };
+  if (!PLANS[plan]) return reply.redirect('/pricing');
+
+  try {
+    const { default: Stripe } = await import('stripe');
+    const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+
+    let customerId = user.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: user.email,
+        metadata: { user_id: String(user.id) },
+      });
+      customerId = customer.id;
+      db.prepare('UPDATE users SET stripe_customer_id = ? WHERE id = ?').run(customerId, user.id);
+    }
+
+    const PRICE_MAP = { starter: 4900, pro: 9900, business: 19900 };
+    const priceData = await stripe.prices.list({ lookup_keys: [`${plan}_monthly`], limit: 1 });
+    let priceId;
+    if (priceData.data.length > 0) {
+      priceId = priceData.data[0].id;
+    } else {
+      const product = await stripe.products.create({ name: `PriceWatch HQ ${plan.charAt(0).toUpperCase() + plan.slice(1)}` });
+      const price = await stripe.prices.create({
+        product: product.id,
+        unit_amount: PRICE_MAP[plan],
+        currency: 'usd',
+        recurring: { interval: 'month' },
+        lookup_key: `${plan}_monthly`,
+      });
+      priceId = price.id;
+    }
+
+    const checkoutSession = await stripe.checkout.sessions.create({
+      customer: customerId,
+      payment_method_types: ['card'],
+      line_items: [{ price: priceId, quantity: 1 }],
+      mode: 'subscription',
+      success_url: `https://pricewatchhq-production.up.railway.app/api/billing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `https://pricewatchhq-production.up.railway.app/pricing`,
+      metadata: { user_id: String(user.id), plan },
+    });
+
+    return reply.redirect(checkoutSession.url);
+  } catch (err) {
+    console.error('[checkout]', err.message);
+    return reply.redirect('/pricing?error=1');
+  }
 });
 
 // Register API routes
