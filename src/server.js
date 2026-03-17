@@ -42,7 +42,18 @@ app.addContentTypeParser('*', { parseAs: 'buffer' }, (req, body, done) => {
 
 // Cookie support
 app.register(fastifyCors, {
-  origin: ['https://pricewatchhq.com', 'https://www.pricewatchhq.com'],
+  origin: (origin, cb) => {
+    const allowed = [
+      'https://pricewatchhq.com',
+      'https://www.pricewatchhq.com',
+      'https://pricewatchhq-production.up.railway.app',
+    ];
+    if (!origin || allowed.includes(origin)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
 });
 app.register(fastifyCookie);
