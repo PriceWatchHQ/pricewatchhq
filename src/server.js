@@ -99,8 +99,9 @@ app.get('/go/checkout', async (req, reply) => {
   if (!PLANS[plan]) return reply.redirect('/pricing');
 
   try {
-    const { default: Stripe } = await import('stripe');
-    const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+    const StripeModule = await import('stripe');
+    const Stripe = StripeModule.default || StripeModule;
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
     let customerId = user.stripe_customer_id;
     if (!customerId) {
