@@ -57,14 +57,7 @@ app.get('/dashboard', (req, reply) => {
   return reply.sendFile('dashboard.html');
 });
 
-// One-time admin seed endpoint — remove after use
-app.get('/admin/seed-week2', async (req, reply) => {
-  const secret = req.query.secret;
-  if (secret !== process.env.ADMIN_SECRET) return reply.status(403).send({ error: 'Forbidden' });
-  const { default: seedFn } = await import('./seed-week2-fn.js');
-  const result = await seedFn();
-  return reply.send(result);
-});
+
 
 // Serve pricing page
 app.get('/pricing', (req, reply) => {
