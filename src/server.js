@@ -75,6 +75,9 @@ app.get('/pricing', (req, reply) => {
   return reply.sendFile('pricing.html');
 });
 
+
+});
+
 // Register API routes
 app.register(urlRoutes);
 app.register(priceRoutes);

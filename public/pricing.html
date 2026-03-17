@@ -377,12 +377,35 @@
     const msg = document.getElementById('checkout-msg');
     msg.textContent = '';
 
-    // Check auth first
-    const meRes = await fetch('https://pricewatchhq-production.up.railway.app/api/auth/me', { credentials: 'include' });
-    if (!meRes.ok) {
-      // Redirect to dashboard (login screen)
-      window.location.href = '/dashboard?redirect=pricing';
-      return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Redirecting…';
+
+    try {
+      const res = await fetch('https://pricewatchhq-production.up.railway.app/api/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ plan }),
+      });
+      const data = await res.json();
+
+      if (res.status === 401) {
+        // Not logged in — send to Railway's dashboard which shares the same cookie domain
+        window.location.href = 'https://pricewatchhq-production.up.railway.app/dashboard';
+        return;
+      }
+
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+      } else {
+        msg.textContent = data.error || 'Something went wrong. Please try again.';
+        btn.disabled = false;
+        btn.innerHTML = 'Get Started';
+      }
+    } catch (err) {
+      msg.textContent = 'Network error. Please try again.';
+      btn.disabled = false;
+      btn.innerHTML = 'Get Started';
     }
 
     btn.disabled = true;
