@@ -4,7 +4,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_DIR = join(__dirname, '..', 'data');
+const DB_DIR = process.env.DB_DIR || join(__dirname, '..', 'data');
 const DB_PATH = join(DB_DIR, 'pricewatchhq.db');
 
 if (!existsSync(DB_DIR)) {
