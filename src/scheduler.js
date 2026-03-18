@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import db from './db.js';
 import { scrapePrice } from './scraper.js';
 import { runPoster } from './poster.js';
+import { runEngager } from './engager.js';
 import { sendPriceAlert, sendSlackAlert, sendSmsAlert } from './mailer.js';
 import { PLAN_LIMITS } from './plans.js';
 
@@ -109,4 +110,11 @@ export function startScheduler() {
   });
 
   console.log('[scheduler] X poster scheduled (every 15 min).');
+
+  // Run engagement once per hour (at :30 past the hour)
+  cron.schedule('30 * * * *', async () => {
+    await runEngager();
+  });
+
+  console.log('[scheduler] X engager scheduled (hourly).');
 }
