@@ -111,10 +111,6 @@ export function startScheduler() {
 
   console.log('[scheduler] X poster scheduled (every 15 min).');
 
-  // Run engagement once per hour (at :30 past the hour)
-  cron.schedule('30 * * * *', async () => {
-    await runEngager();
-  });
-
-  console.log('[scheduler] X engager scheduled (hourly).');
+  // Engager disabled — manual approval mode, run via CLI only
+  // console.log('[scheduler] X engager disabled (manual approval mode).');
 }
