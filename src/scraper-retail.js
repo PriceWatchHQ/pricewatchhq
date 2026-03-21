@@ -8,6 +8,41 @@ const MAX_RETRIES = 3;
 const NAV_TIMEOUT = 45_000;
 const BLOCKED_ELEMENT_THRESHOLD = 100;
 
+// ---------------------------------------------------------------------------
+// US IP verification - DataImpulse country targeting is unreliable.
+// This helper retries until we get an actual US residential IP.
+// ---------------------------------------------------------------------------
+
+/**
+ * Try to get a confirmed US IP from DataImpulse by sampling proxy IPs.
+ * Returns the proxy URL to use (same URL, just confirms next request will be US).
+ * DataImpulse rotates IPs per connection, so simply retrying gets a new IP.
+ * @param {number} maxAttempts - How many times to try before giving up
+ * @returns {Promise<boolean>} true if a US IP was confirmed available
+ */
+async function confirmUSProxyAvailable(maxAttempts = 15) {
+  if (!PROXY_URL) return false;
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const r = await wreqGet('http://ip-api.com/json?fields=countryCode', {
+        browser: 'chrome_131',
+        os: 'windows',
+        proxy: PROXY_URL,
+      });
+      const data = await r.json();
+      if (data.countryCode === 'US') {
+        console.log(`[scraper-retail] Confirmed US IP on attempt ${i + 1}/${maxAttempts}`);
+        return true;
+      }
+      console.log(`[scraper-retail] IP country=${data.countryCode} (attempt ${i + 1}), retrying...`);
+    } catch (err) {
+      // ignore transient errors, just retry
+    }
+  }
+  console.log(`[scraper-retail] Could not confirm US IP after ${maxAttempts} attempts`);
+  return false;
+}
+
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
@@ -493,6 +528,14 @@ export async function scrapeWalmartViaWreq(url) {
 
   const productId = extractWalmartProductId(url);
   if (!productId) return null;
+
+  // Walmart captchas non-US IPs. Confirm we have a US IP before attempting.
+  // DataImpulse gives ~1 US IP per 5-10 requests, so 25 attempts ~= 2-5 US IPs available.
+  const hasUSIP = await confirmUSProxyAvailable(25);
+  if (!hasUSIP) {
+    console.log('[scraper-retail] wreq-js Walmart: no US IP available, skipping');
+    return null;
+  }
 
   try {
     console.log(`[scraper-retail] wreq-js Walmart lookup for product_id=${productId}`);
