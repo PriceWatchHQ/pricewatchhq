@@ -174,5 +174,7 @@ function parsePrice(raw) {
   if (!raw) return null;
   const cleaned = raw.replace(/[^0-9.,]/g, '').replace(/,/g, '');
   const num = parseFloat(cleaned);
-  return Number.isFinite(num) ? num : null;
+  // Sanity check: prices must be between $0.01 and $100,000
+  if (!Number.isFinite(num) || num <= 0 || num > 100000) return null;
+  return num;
 }
