@@ -68,3 +68,31 @@ export default async function urlRoutes(fastify) {
     return { success: true };
   });
 }
+
+  // TEMPORARY ADMIN: bulk URL management (remove after use)
+  fastify.post('/api/admin/urls/bulk', async (request, reply) => {
+    const { secret, action, ids, urls_to_add, user_email } = request.body || {};
+    if (secret !== process.env.ADMIN_SECRET) return reply.status(403).send({ error: 'forbidden' });
+
+    const user = db.prepare('SELECT id FROM users WHERE email=?').get(user_email);
+    if (!user) return reply.status(404).send({ error: 'user not found' });
+
+    const results = { deleted: 0, added: [] };
+
+    if (action === 'delete_by_url_pattern' && ids) {
+      for (const pattern of ids) {
+        const r = db.prepare('DELETE FROM watched_urls WHERE url LIKE ? AND user_id=?').run(`%${pattern}%`, user.id);
+        results.deleted += r.changes;
+      }
+    }
+
+    if (urls_to_add) {
+      const insert = db.prepare('INSERT INTO watched_urls (user_id, label, url) VALUES (?, ?, ?)');
+      for (const u of urls_to_add) {
+        insert.run(user.id, u.label, u.url);
+        results.added.push(u.label);
+      }
+    }
+
+    return reply.send(results);
+  });
