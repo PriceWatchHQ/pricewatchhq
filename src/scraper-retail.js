@@ -55,6 +55,25 @@ const USER_AGENTS = [
 // ---------------------------------------------------------------------------
 
 const RETAILERS = {
+  amazon: {
+    match: (url) => /amazon\.com/i.test(url),
+    waitFor: '#priceblock_ourprice, #priceblock_dealprice, .a-price .a-offscreen, #price_inside_buybox',
+    priceSelectors: [
+      { selector: '#priceblock_ourprice', attr: null },
+      { selector: '#priceblock_dealprice', attr: null },
+      { selector: '#price_inside_buybox', attr: null },
+      { selector: '.a-price .a-offscreen', attr: null },
+      { selector: '[itemprop="price"]', attr: 'content' },
+      { selector: '#corePrice_feature_div .a-price .a-offscreen', attr: null },
+    ],
+    stockSelectors: [
+      '#add-to-cart-button',
+      'input[name="submit.add-to-cart"]',
+    ],
+    stockTextSelectors: [
+      '#availability',
+    ],
+  },
   walmart: {
     match: (url) => /walmart\.com/i.test(url),
     waitFor: '[itemprop="price"], [data-testid="price-wrap"], .price-group',
@@ -321,6 +340,13 @@ export async function scrapePriceAndStockRetail(url) {
   const retailerStockSelectors = retailer?.stockSelectors || [];
   const retailerStockTextSelectors = retailer?.stockTextSelectors || [];
   const waitForSelector = retailer?.waitFor || '[itemprop="price"], .price';
+
+  // Amazon: go straight to browser — plain HTTP always gets captcha-blocked
+  // Playwright with stealth handles Amazon reliably
+  if (retailerName === 'amazon') {
+    // Fall through to Playwright browser below (no API tier for Amazon)
+    console.log('[scraper-retail] Amazon URL detected, using Playwright stealth browser');
+  }
 
   // Best Buy: BB Official API → wreq-js search → ZenRows → browser
   if (retailerName === 'bestbuy') {

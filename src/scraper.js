@@ -145,6 +145,13 @@ export async function scrapePriceAndStock(url) {
   }
 
   const html = await res.text();
+
+  // Detect bot-block/captcha pages — bail early to avoid false data
+  if (html.length < 20_000 && /captcha|robot|automated|unusual traffic|Type the characters/i.test(html)) {
+    console.log(`[scraper] Bot-blocked (captcha) for ${url}, returning null`);
+    return { price: null, stockStatus: null };
+  }
+
   const $ = load(html);
 
   // Extract price
