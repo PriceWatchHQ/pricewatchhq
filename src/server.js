@@ -191,23 +191,26 @@ app.post('/admin/bulk-urls', async (req, reply) => {
 app.get('/admin/force-scrape', async (req, reply) => {
   const { secret } = req.query;
   if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
-  const { scrapePriceAndStock } = await import('./scraper.js');
   const db = getDb();
   const urls = db.prepare('SELECT * FROM watched_urls').all();
-  let updated = 0;
-  for (const entry of urls) {
-    try {
-      const { price, stockStatus } = await scrapePriceAndStock(entry.url);
-      if (price !== null || stockStatus !== null) {
-        db.prepare('UPDATE watched_urls SET last_price = COALESCE(?, last_price), last_stock_status = COALESCE(?, last_stock_status), last_checked_at = datetime("now") WHERE id = ?')
-          .run(price, stockStatus, entry.id);
-        updated++;
+  // Reply immediately, run scrape in background
+  reply.send({ success: true, message: 'Scrape started in background', total: urls.length });
+  // Run scrape after reply
+  setImmediate(async () => {
+    const { scrapePriceAndStock } = await import('./scraper.js');
+    for (const entry of urls) {
+      try {
+        const { price, stockStatus } = await scrapePriceAndStock(entry.url);
+        if (price !== null || stockStatus !== null) {
+          db.prepare('UPDATE watched_urls SET last_price = COALESCE(?, last_price), last_stock_status = COALESCE(?, last_stock_status), last_checked_at = datetime("now") WHERE id = ?')
+            .run(price, stockStatus, entry.id);
+        }
+      } catch (e) {
+        console.error('[force-scrape] Error on', entry.url, e.message);
       }
-    } catch (e) {
-      console.error('[force-scrape] Error on', entry.url, e.message);
     }
-  }
-  return { success: true, updated, total: urls.length };
+    console.log('[force-scrape] Complete for', urls.length, 'URLs');
+  });
 });
 
 // Start server
