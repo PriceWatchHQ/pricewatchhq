@@ -67,7 +67,6 @@ export default async function urlRoutes(fastify) {
 
     return { success: true };
   });
-}
 
   // TEMPORARY ADMIN: bulk URL management (remove after use)
   fastify.post('/api/admin/urls/bulk', async (request, reply) => {
@@ -96,3 +95,4 @@ export default async function urlRoutes(fastify) {
 
     return reply.send(results);
   });
+}
