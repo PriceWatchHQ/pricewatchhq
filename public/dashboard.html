@@ -751,6 +751,7 @@
               <th>Stock</th>
               <th>Last Checked</th>
               <th>Change</th>
+              <th>Updated Price</th>
               <th></th>
             </tr>
           </thead>
@@ -919,7 +920,7 @@
   function renderUrls(urls) {
     const tbody = document.getElementById('urls-tbody');
     if (!urls || urls.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No URLs monitored yet. Add one above!</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No URLs monitored yet. Add one above!</td></tr>';
       return;
     }
 
@@ -931,6 +932,22 @@
       const changeBadge = changeIndicator(u.change);
       const stockBadge = stockIndicator(u.last_stock_status);
       const isSelected = u.id === selectedUrlId;
+
+      // Updated price: show current price with diff from previous
+      let updatedPriceCell = '—';
+      if (u.last_price != null) {
+        const current = Number(u.last_price);
+        if (u.prev_price != null && u.change !== 'same') {
+          const prev = Number(u.prev_price);
+          const diff = current - prev;
+          const diffStr = (diff >= 0 ? '+' : '') + '$' + Math.abs(diff).toFixed(2);
+          const diffColor = diff < 0 ? 'var(--green)' : 'var(--red)';
+          updatedPriceCell = `<strong>$${current.toFixed(2)}</strong> <span style="color:${diffColor};font-size:0.8rem">(${diffStr})</span>`;
+        } else {
+          updatedPriceCell = `<strong>$${current.toFixed(2)}</strong>`;
+        }
+      }
+
       return `<tr data-id="${u.id}" class="${isSelected ? 'selected' : ''}">
         <td><strong>${escHtml(u.label || '—')}</strong></td>
         <td class="url-cell"><a href="${escHtml(u.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${escHtml(u.url)}</a></td>
@@ -938,6 +955,7 @@
         <td>${stockBadge}</td>
         <td style="color:var(--text-muted);font-size:0.85rem">${checked}</td>
         <td>${changeBadge}</td>
+        <td>${updatedPriceCell}</td>
         <td><button class="btn-delete" onclick="deleteUrl(event,${u.id})">Remove</button></td>
       </tr>`;
     }).join('');
