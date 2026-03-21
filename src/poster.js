@@ -6,19 +6,14 @@
 import { TwitterApi } from 'twitter-api-v2';
 import { getDb } from './db.js';
 
-let rwClient = null;
-
 function getTwitterClient() {
-  if (!rwClient) {
-    const client = new TwitterApi({
-      appKey: process.env.X_CONSUMER_KEY,
-      appSecret: process.env.X_CONSUMER_SECRET,
-      accessToken: process.env.X_ACCESS_TOKEN,
-      accessSecret: process.env.X_ACCESS_SECRET,
-    });
-    rwClient = client.readWrite;
-  }
-  return rwClient;
+  const client = new TwitterApi({
+    appKey: process.env.X_CONSUMER_KEY,
+    appSecret: process.env.X_CONSUMER_SECRET,
+    accessToken: process.env.X_ACCESS_TOKEN,
+    accessSecret: process.env.X_ACCESS_SECRET,
+  });
+  return client.readWrite;
 }
 
 /**
