@@ -11,6 +11,28 @@ import { PLAN_LIMITS } from './plans.js';
  * Start the price-check cron job (every 15 minutes).
  * Respects each user's plan check frequency before scraping.
  */
+// Max concurrent scrapes — keeps Railway CPU/memory healthy
+// HTTP-only scrapes are cheap; Playwright/headless scrapes are heavy
+const MAX_CONCURRENT_HTTP = 10;
+const MAX_CONCURRENT_BROWSER = 5;
+
+/**
+ * Run an array of async tasks with a concurrency limit.
+ */
+async function runWithConcurrency(tasks, limit) {
+  const results = [];
+  const executing = new Set();
+  for (const task of tasks) {
+    const p = Promise.resolve().then(task).finally(() => executing.delete(p));
+    executing.add(p);
+    results.push(p);
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+  return Promise.allSettled(results);
+}
+
 export function startScheduler() {
   // Run every 15 minutes; each URL is checked only when its plan allows
   cron.schedule('*/15 * * * *', async () => {
@@ -19,27 +41,60 @@ export function startScheduler() {
     const urls = db.prepare('SELECT * FROM watched_urls').all();
     const now = Date.now();
 
+    // Separate URLs into browser-required vs HTTP-only for appropriate concurrency limits
+    const browserUrls = [];
+    const httpUrls = [];
+
     for (const entry of urls) {
-      try {
-        // Get user plan to determine check frequency
-        const user = entry.user_id
-          ? db.prepare('SELECT plan FROM users WHERE id = ?').get(entry.user_id)
-          : null;
-        const plan = user?.plan || 'free';
-        const freqMinutes = PLAN_LIMITS[plan]?.checkFreqMinutes ?? PLAN_LIMITS.free.checkFreqMinutes;
-        const freqMs = freqMinutes * 60 * 1000;
+      const user = entry.user_id
+        ? db.prepare('SELECT plan FROM users WHERE id = ?').get(entry.user_id)
+        : null;
+      const plan = user?.plan || 'free';
+      const freqMinutes = PLAN_LIMITS[plan]?.checkFreqMinutes ?? PLAN_LIMITS.free.checkFreqMinutes;
+      const freqMs = freqMinutes * 60 * 1000;
 
-        // Skip if not enough time has passed since last check
-        if (entry.last_checked_at) {
-          const lastChecked = new Date(entry.last_checked_at).getTime();
-          if (now - lastChecked < freqMs) {
-            continue;
-          }
-        }
+      if (entry.last_checked_at) {
+        const lastChecked = new Date(entry.last_checked_at).getTime();
+        if (now - lastChecked < freqMs) continue;
+      }
 
-        const useHeadless = PLAN_LIMITS[plan]?.headlessScraper === true;
-        const usePlaywright = PLAN_LIMITS[plan]?.playwrightScraper === true;
+      const useHeadless = PLAN_LIMITS[plan]?.headlessScraper === true;
+      const usePlaywright = PLAN_LIMITS[plan]?.playwrightScraper === true;
+      const needsBrowser = isRetailUrl(entry.url) || useHeadless;
 
+      if (needsBrowser) {
+        browserUrls.push({ entry, plan, useHeadless, usePlaywright });
+      } else {
+        httpUrls.push({ entry, plan, useHeadless, usePlaywright });
+      }
+    }
+
+    console.log(`[scheduler] Checking ${httpUrls.length} HTTP + ${browserUrls.length} browser URLs`);
+
+    // Run HTTP tasks at higher concurrency, browser at lower
+    const httpTasks = httpUrls.map(item => () => processUrl(item));
+    const browserTasks = browserUrls.map(item => () => processUrl(item));
+
+    await Promise.all([
+      runWithConcurrency(httpTasks, MAX_CONCURRENT_HTTP),
+      runWithConcurrency(browserTasks, MAX_CONCURRENT_BROWSER),
+    ]);
+
+    console.log(`[scheduler] Price check complete.`);
+  });
+
+  console.log('[scheduler] Price check scheduled (every 15 min, respecting plan frequencies)');
+
+  // Check for scheduled X posts every 15 minutes
+  cron.schedule('*/15 * * * *', async () => {
+    await runPoster();
+  });
+
+  console.log('[scheduler] X poster scheduled (every 15 min).');
+}
+
+async function processUrl({ entry, plan, useHeadless, usePlaywright }) {
+  try {
         // Retail URLs (Walmart, Best Buy, Target) always use the retail scraper
         // regardless of plan — plain HTTP never works on these sites
         let price, stockStatus;
@@ -65,7 +120,7 @@ export function startScheduler() {
               `UPDATE watched_urls SET fail_count = ?, last_checked_at = datetime('now') WHERE id = ?`
             ).run(newFailCount, entry.id);
           }
-          continue;
+          return;
         }
 
         // Successful scrape — reset fail count and ensure status is active
@@ -171,23 +226,7 @@ export function startScheduler() {
             last_checked_at = datetime('now')
           WHERE id = ?`
         ).run(price, stockStatus, entry.id);
-      } catch (err) {
-        console.error(`[scheduler] Error scraping ${entry.url}:`, err.message);
-      }
-    }
-
-    console.log(`[scheduler] Price check complete.`);
-  });
-
-  console.log('[scheduler] Price check scheduled (every 15 min, respecting plan frequencies)');
-
-  // Check for scheduled X posts every 15 minutes
-  cron.schedule('*/15 * * * *', async () => {
-    await runPoster();
-  });
-
-  console.log('[scheduler] X poster scheduled (every 15 min).');
-
-  // Engager disabled — manual approval mode, run via CLI only
-  // console.log('[scheduler] X engager disabled (manual approval mode).');
+  } catch (err) {
+    console.error(`[scheduler] Error scraping ${entry.url}:`, err.message);
+  }
 }
