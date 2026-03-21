@@ -606,8 +606,8 @@ export async function scrapeWalmartViaSearchPage(url) {
     const items = data?.props?.pageProps?.initialData?.searchResult?.itemStacks?.[0]?.items || [];
     if (!items.length) return null;
 
-    // Prefer exact item ID match, fall back to first result
-    const item = items.find(it => it.usItemId === itemId) || items[0];
+    // Only use exact item ID match — never fall back to first result (wrong product prices)
+    const item = items.find(it => it.usItemId === itemId);
     if (!item) return null;
 
     // Extract price
@@ -812,7 +812,7 @@ export async function scrapeBestBuyViaWreq(url) {
       // Extract all SKU→price pairs from Apollo/Next.js SSR data
       const pairs = [...html.matchAll(/"skuId":"(\d+)"[^}]{0,500}"customerPrice":(\d+\.?\d*)/g)];
 
-      // Try exact SKU match first
+      // Only use exact SKU match — never fall back to first result (causes wrong product prices)
       const exact = pairs.find(([, s]) => s === skuId);
       if (exact) {
         price = parseFloat(exact[2]);
@@ -826,10 +826,6 @@ export async function scrapeBestBuyViaWreq(url) {
             : (state === 'SOLD_OUT' || state === 'COMING_SOON') ? 'out_of_stock' : null;
         }
         break;
-      } else if (pairs.length > 0 && !price) {
-        price = parseFloat(pairs[0][2]);
-        matchType = 'first-result';
-        // Keep trying other variations for an exact match
       }
     }
 
