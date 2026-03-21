@@ -1038,7 +1038,7 @@
     event.stopPropagation();
     if (!confirm('Remove this URL from monitoring?')) return;
     try {
-      const res = await fetch(`/api/dashboard/urls/${id}`, { method: 'DELETE' });
+      const res = await fetch(`https://pricewatchhq-production.up.railway.app/api/dashboard/urls/${id}`, { method: 'DELETE' });
       if (res.ok) {
         if (selectedUrlId === id) {
           selectedUrlId = null;
@@ -1065,7 +1065,7 @@
     document.getElementById('price-chart').style.display = 'none';
 
     try {
-      const res = await fetch(`/api/dashboard/urls/${id}/history`);
+      const res = await fetch(`https://pricewatchhq-production.up.railway.app/api/dashboard/urls/${id}/history`);
       if (!res.ok) throw new Error('Failed');
       const { history } = await res.json();
 
