@@ -286,11 +286,17 @@ export async function scrapePriceAndStockRetail(url) {
   const retailerStockTextSelectors = retailer?.stockTextSelectors || [];
   const waitForSelector = retailer?.waitFor || '[itemprop="price"], .price';
 
-  // Walmart: try ScraperAPI structured endpoint first (handles Akamai bot detection)
-  if (retailerName === 'walmart' && SCRAPERAPI_KEY) {
-    const scraperResult = await scrapeWalmartViaScraperAPI(url);
-    if (scraperResult && scraperResult.price !== null) return scraperResult;
-    console.log('[scraper-retail] ScraperAPI Walmart returned no price, falling back to browser');
+  // Walmart: try ZenRows first (best Walmart support), then ScraperAPI, then browser
+  if (retailerName === 'walmart') {
+    if (ZENROWS_KEY) {
+      const zrResult = await scrapeWalmartViaZenRows(url);
+      if (zrResult && zrResult.price !== null) return zrResult;
+      console.log('[scraper-retail] ZenRows Walmart returned no price, falling back');
+    } else if (SCRAPERAPI_KEY) {
+      const scraperResult = await scrapeWalmartViaScraperAPI(url);
+      if (scraperResult && scraperResult.price !== null) return scraperResult;
+      console.log('[scraper-retail] ScraperAPI Walmart returned no price, falling back to browser');
+    }
   }
 
   const launchOptions = buildLaunchOptions();
@@ -385,6 +391,7 @@ export function isRetailUrl(url) {
 // ---------------------------------------------------------------------------
 
 const SCRAPERAPI_KEY = process.env.SCRAPERAPI_KEY || null;
+const ZENROWS_KEY = process.env.ZENROWS_KEY || null;
 
 /**
  * Extract Walmart product ID from a walmart.com product URL.
@@ -402,6 +409,60 @@ function extractWalmartProductId(url) {
  *
  * Requires SCRAPERAPI_KEY env var. Falls back gracefully if not set.
  */
+/**
+ * Scrape a Walmart product using ZenRows (handles Akamai bot detection).
+ * Uses js_render=true + premium_proxy=true to get full page with __NEXT_DATA__.
+ */
+export async function scrapeWalmartViaZenRows(url) {
+  if (!ZENROWS_KEY) return null;
+
+  const productId = extractWalmartProductId(url);
+  if (!productId) return null;
+
+  const walmartUrl = encodeURIComponent(url);
+  const apiUrl = `https://api.zenrows.com/v1/?apikey=${ZENROWS_KEY}&url=${walmartUrl}&premium_proxy=true&js_render=true`;
+
+  try {
+    console.log(`[scraper-retail] ZenRows Walmart lookup for product_id=${productId}`);
+    const res = await fetch(apiUrl, { timeout: 45_000 });
+
+    if (!res.ok) {
+      console.error(`[scraper-retail] ZenRows returned ${res.status} for ${productId}`);
+      return null;
+    }
+
+    const html = await res.text();
+
+    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+    if (!nextDataMatch) {
+      console.error(`[scraper-retail] ZenRows: No __NEXT_DATA__ for ${productId}`);
+      return null;
+    }
+
+    const pageData = JSON.parse(nextDataMatch[1]);
+    const product = pageData?.props?.pageProps?.initialData?.data?.product;
+    if (!product) return null;
+
+    let price = null;
+    const rawPrice = product?.priceInfo?.currentPrice?.price;
+    if (rawPrice != null) {
+      const num = parseFloat(String(rawPrice).replace(/[^0-9.]/g, ''));
+      if (Number.isFinite(num) && num > 0 && num <= 100000) price = num;
+    }
+
+    let stockStatus = null;
+    const avail = product?.availabilityStatus;
+    if (avail === 'IN_STOCK') stockStatus = 'in_stock';
+    else if (avail === 'OUT_OF_STOCK' || avail === 'UNAVAILABLE') stockStatus = 'out_of_stock';
+
+    console.log(`[scraper-retail] ZenRows Walmart result: price=${price}, stock=${stockStatus}`);
+    return { price, stockStatus, retailer: 'walmart' };
+  } catch (err) {
+    console.error(`[scraper-retail] ZenRows Walmart error:`, err.message);
+    return null;
+  }
+}
+
 export async function scrapeWalmartViaScraperAPI(url) {
   if (!SCRAPERAPI_KEY) return null;
 
@@ -411,7 +472,10 @@ export async function scrapeWalmartViaScraperAPI(url) {
     return null;
   }
 
-  const apiUrl = `https://api.scraperapi.com/structured/walmart/product?api_key=${SCRAPERAPI_KEY}&product_id=${productId}&country_code=us`;
+  // Use generic endpoint with premium=true - structured endpoint doesn't work on free plan
+  // Parse __NEXT_DATA__ from the raw HTML ourselves
+  const walmartUrl = encodeURIComponent(`https://www.walmart.com/ip/${productId}`);
+  const apiUrl = `https://api.scraperapi.com/?api_key=${SCRAPERAPI_KEY}&url=${walmartUrl}&premium=true`;
 
   try {
     console.log(`[scraper-retail] ScraperAPI Walmart lookup for product_id=${productId}`);
@@ -422,26 +486,40 @@ export async function scrapeWalmartViaScraperAPI(url) {
       return null;
     }
 
-    const data = await res.json();
+    const html = await res.text();
 
-    // ScraperAPI structured response shape:
-    // data.price (string like "$24.99" or number), data.in_stock (bool)
+    // Check for bot block
+    if (html.includes('Robot or human') || html.length < 5000) {
+      console.error(`[scraper-retail] ScraperAPI Walmart still blocked for ${productId}`);
+      return null;
+    }
+
+    // Extract __NEXT_DATA__ JSON blob embedded in the page
+    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+    if (!nextDataMatch) {
+      console.error(`[scraper-retail] No __NEXT_DATA__ found for ${productId}`);
+      return null;
+    }
+
+    const pageData = JSON.parse(nextDataMatch[1]);
+    const product = pageData?.props?.pageProps?.initialData?.data?.product;
+
+    if (!product) {
+      console.error(`[scraper-retail] No product data in __NEXT_DATA__ for ${productId}`);
+      return null;
+    }
+
     let price = null;
-    const rawPrice = data?.price ?? data?.sale_price ?? data?.current_price;
+    const rawPrice = product?.priceInfo?.currentPrice?.price;
     if (rawPrice != null) {
-      const cleaned = String(rawPrice).replace(/[^0-9.]/g, '');
-      const num = parseFloat(cleaned);
+      const num = parseFloat(String(rawPrice).replace(/[^0-9.]/g, ''));
       if (Number.isFinite(num) && num > 0 && num <= 100000) price = num;
     }
 
     let stockStatus = null;
-    if (data?.in_stock === true) stockStatus = 'in_stock';
-    else if (data?.in_stock === false) stockStatus = 'out_of_stock';
-    else if (data?.availability) {
-      const avail = String(data.availability).toLowerCase();
-      if (avail.includes('in_stock') || avail.includes('instock')) stockStatus = 'in_stock';
-      else if (avail.includes('out')) stockStatus = 'out_of_stock';
-    }
+    const avail = product?.availabilityStatus;
+    if (avail === 'IN_STOCK') stockStatus = 'in_stock';
+    else if (avail === 'OUT_OF_STOCK' || avail === 'UNAVAILABLE') stockStatus = 'out_of_stock';
 
     console.log(`[scraper-retail] ScraperAPI Walmart result: price=${price}, stock=${stockStatus}`);
     return { price, stockStatus, retailer: 'walmart' };
