@@ -80,19 +80,31 @@ export async function scrapeStockStatus(url, existingHtml) {
   // (other selectors match unrelated page sections and produce false OOS)
   const isAmazon = url.includes('amazon.com');
   if (isAmazon) {
-    const avail = $('#availability').first();
-    if (avail.length) {
-      const text = avail.text().toLowerCase().trim();
-      if (/out of stock|sold out|unavailable|currently unavailable|not available/i.test(text)) {
-        return 'out_of_stock';
-      }
-      if (/in stock|in-stock|available|ships from|only \d+ left/i.test(text)) {
-        return 'in_stock';
-      }
-    }
-    // Add to Cart button presence is a reliable in-stock signal on Amazon
+    // Add to Cart button = definitively in stock (main seller)
     const cartBtn = $('[id="add-to-cart-button"], [name="submit.add-to-cart"]').first();
     if (cartBtn.length && !cartBtn.attr('disabled')) return 'in_stock';
+
+    // Check main buy box availability text
+    const avail = $('#availability').first();
+    let mainBuyBoxOOS = false;
+    if (avail.length) {
+      const text = avail.text().toLowerCase().trim();
+      if (/in stock|in-stock|available|ships from|only \d+ left/i.test(text)) return 'in_stock';
+      if (/out of stock|sold out|unavailable|currently unavailable|not available/i.test(text)) {
+        mainBuyBoxOOS = true;
+      }
+    }
+
+    // If main buy box is OOS, check for other sellers (3rd party / marketplace)
+    // Amazon shows "X new from $XX.XX" or "More buying choices" when other sellers have stock
+    if (mainBuyBoxOOS) {
+      const otherSellers = $('#olp_feature_div, #moreBuyingChoices_feature_div, #buybox-see-all-buying-choices, #new-buybox').first();
+      if (otherSellers.length && otherSellers.text().trim().length > 0) {
+        return 'in_stock'; // Other sellers have stock
+      }
+      return 'out_of_stock';
+    }
+
     return null;
   }
 

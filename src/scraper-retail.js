@@ -65,6 +65,9 @@ const RETAILERS = {
       { selector: '.a-price .a-offscreen', attr: null },
       { selector: '[itemprop="price"]', attr: 'content' },
       { selector: '#corePrice_feature_div .a-price .a-offscreen', attr: null },
+      // Other sellers price (when main buy box is OOS)
+      { selector: '#olp_feature_div .a-color-price', attr: null },
+      { selector: '#moreBuyingChoices_feature_div .a-color-price', attr: null },
     ],
     stockSelectors: [
       '#add-to-cart-button',
@@ -311,6 +314,24 @@ function buildExtractFn() {
     if (!stockStatus) stockStatus = tryStockFromText(retailerStockTextSelectors);
     if (!stockStatus) stockStatus = tryStockFromText(genericStockSelectors);
     if (!stockStatus) stockStatus = tryStockFromCartButtons();
+
+    // Amazon-specific: if main buy box is OOS, check for other sellers before marking OOS
+    // "More Buying Choices" / "X new from $Y" = other sellers have stock
+    const isAmazon = typeof window !== 'undefined' && window.location.hostname.includes('amazon.com');
+    if (isAmazon && stockStatus === 'out_of_stock') {
+      const otherSellers = document.querySelector(
+        '#olp_feature_div, #moreBuyingChoices_feature_div, #buybox-see-all-buying-choices, #new-buybox'
+      );
+      if (otherSellers && otherSellers.textContent.trim().length > 0) {
+        stockStatus = 'in_stock';
+        // Also try to get the other seller price
+        const otherPrice = document.querySelector('#olp_feature_div .a-color-price, #moreBuyingChoices_feature_div .a-color-price');
+        if (otherPrice && price === null) {
+          const p = parseFloat(otherPrice.textContent.replace(/[^0-9.]/g, ''));
+          if (Number.isFinite(p) && p > 0) price = p;
+        }
+      }
+    }
 
     return { price, stockStatus };
   };
