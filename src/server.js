@@ -157,16 +157,6 @@ app.register(billingRoutes);
 app.register(apiKeyRoutes);
 app.register(publicApiRoutes);
 
-// Start server
-try {
-  await app.listen({ port: PORT, host: '0.0.0.0' });
-  startScheduler();
-  console.log(`PriceWatch HQ running on http://localhost:${PORT}`);
-} catch (err) {
-  app.log.error(err);
-  process.exit(1);
-}
-
 // Temp admin endpoint — upgrade user plan
 app.get('/admin/upgrade', async (req, reply) => {
   const { email, plan, secret } = req.query;
@@ -176,3 +166,13 @@ app.get('/admin/upgrade', async (req, reply) => {
   if (result.changes === 0) return reply.status(404).send({ error: 'User not found' });
   return { success: true, email, plan };
 });
+
+// Start server
+try {
+  await app.listen({ port: PORT, host: '0.0.0.0' });
+  startScheduler();
+  console.log(`PriceWatch HQ running on http://localhost:${PORT}`);
+} catch (err) {
+  app.log.error(err);
+  process.exit(1);
+}
