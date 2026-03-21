@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import db from './db.js';
 import { scrapePrice, scrapePriceAndStock, scrapePriceAndStockWithFallback } from './scraper.js';
+import { isRetailUrl, scrapePriceAndStockRetail } from './scraper-retail.js';
 import { runPoster } from './poster.js';
 import { runEngager } from './engager.js';
 import { sendPriceAlert, sendSlackAlert, sendSmsAlert, sendStockAlert, sendSlackStockAlert, sendSmsStockAlert } from './mailer.js';
@@ -38,9 +39,17 @@ export function startScheduler() {
 
         const useHeadless = PLAN_LIMITS[plan]?.headlessScraper === true;
         const usePlaywright = PLAN_LIMITS[plan]?.playwrightScraper === true;
-        const { price, stockStatus } = useHeadless
-          ? await scrapePriceAndStockWithFallback(entry.url, usePlaywright)
-          : await scrapePriceAndStock(entry.url);
+
+        // Retail URLs (Walmart, Best Buy, Target) always use the retail scraper
+        // regardless of plan — plain HTTP never works on these sites
+        let price, stockStatus;
+        if (isRetailUrl(entry.url)) {
+          ({ price, stockStatus } = await scrapePriceAndStockRetail(entry.url));
+        } else if (useHeadless) {
+          ({ price, stockStatus } = await scrapePriceAndStockWithFallback(entry.url, usePlaywright));
+        } else {
+          ({ price, stockStatus } = await scrapePriceAndStock(entry.url));
+        }
 
         if (price === null && stockStatus === null) {
           console.log(`[scheduler] No price or stock found for ${entry.url}`);
