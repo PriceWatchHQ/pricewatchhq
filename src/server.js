@@ -168,15 +168,6 @@ app.get('/admin/upgrade', async (req, reply) => {
   return { success: true, email, plan };
 });
 
-// Start server
-try {
-  await app.listen({ port: PORT, host: '0.0.0.0' });
-  startScheduler();
-  console.log(`PriceWatch HQ running on http://localhost:${PORT}`);
-} catch (err) {
-  app.log.error(err);
-  process.exit(1);
-}
 
 // Temp admin: bulk add URLs for a user
 app.post('/admin/bulk-urls', async (req, reply) => {
@@ -194,3 +185,13 @@ app.post('/admin/bulk-urls', async (req, reply) => {
   }
   return { success: true, added: count };
 });
+// Start server
+try {
+  await app.listen({ port: PORT, host: '0.0.0.0' });
+  startScheduler();
+  console.log(`PriceWatch HQ running on http://localhost:${PORT}`);
+} catch (err) {
+  app.log.error(err);
+  process.exit(1);
+}
+
