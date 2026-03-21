@@ -2,6 +2,7 @@ import { load } from 'cheerio';
 import fetch from 'node-fetch';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { scrapePriceAndStockHeadless } from './scraper-headless.js';
+import { scrapePriceAndStockPlaywright } from './scraper-playwright.js';
 
 // DataImpulse residential proxy
 const PROXY_URL = process.env.PROXY_URL || null;
@@ -143,9 +144,11 @@ export async function scrapePriceAndStock(url) {
 
 /**
  * Try the fast HTTP scraper first; if price is null, fall back to headless browser.
+ * When usePlaywright is true, adds a Playwright stealth tier between HTTP and Puppeteer.
+ * Fallback chain: HTTP → Playwright (if enabled) → Puppeteer headless.
  * Returns { price, stockStatus }.
  */
-export async function scrapePriceAndStockWithFallback(url) {
+export async function scrapePriceAndStockWithFallback(url, usePlaywright = false) {
   const httpResult = await scrapePriceAndStock(url);
 
   if (httpResult.price !== null) {
@@ -153,7 +156,25 @@ export async function scrapePriceAndStockWithFallback(url) {
     return httpResult;
   }
 
-  console.log(`[scraper] HTTP scraper returned no price for ${url}, trying headless browser...`);
+  // Playwright stealth fallback (pro/business plans)
+  if (usePlaywright) {
+    console.log(`[scraper] HTTP scraper returned no price for ${url}, trying Playwright stealth...`);
+    try {
+      const pwResult = await scrapePriceAndStockPlaywright(url);
+      console.log(`[scraper] Playwright result for ${url}: price=${pwResult.price}, stock=${pwResult.stockStatus}`);
+      if (pwResult.price !== null) {
+        return {
+          price: pwResult.price,
+          stockStatus: pwResult.stockStatus ?? httpResult.stockStatus,
+        };
+      }
+    } catch (err) {
+      console.error(`[scraper] Playwright stealth failed for ${url}:`, err.message);
+    }
+  }
+
+  // Puppeteer headless fallback
+  console.log(`[scraper] Trying Puppeteer headless for ${url}...`);
   try {
     const headlessResult = await scrapePriceAndStockHeadless(url);
     console.log(`[scraper] Headless scraper result for ${url}: price=${headlessResult.price}, stock=${headlessResult.stockStatus}`);

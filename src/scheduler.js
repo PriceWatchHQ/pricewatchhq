@@ -37,8 +37,9 @@ export function startScheduler() {
         }
 
         const useHeadless = PLAN_LIMITS[plan]?.headlessScraper === true;
+        const usePlaywright = PLAN_LIMITS[plan]?.playwrightScraper === true;
         const { price, stockStatus } = useHeadless
-          ? await scrapePriceAndStockWithFallback(entry.url)
+          ? await scrapePriceAndStockWithFallback(entry.url, usePlaywright)
           : await scrapePriceAndStock(entry.url);
 
         if (price === null && stockStatus === null) {
