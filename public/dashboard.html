@@ -416,6 +416,7 @@
     .stock-in { background: rgba(52, 211, 153, 0.12); color: var(--green); }
     .stock-out { background: rgba(248, 113, 113, 0.12); color: var(--red); }
     .stock-unknown { background: rgba(148, 163, 184, 0.1); color: var(--text-muted); }
+    .stock-unavailable { background: rgba(245, 158, 11, 0.12); color: #F59E0B; }
     .btn-delete {
       background: transparent;
       border: 1px solid var(--border);
@@ -930,7 +931,9 @@
         ? new Date(u.last_checked_at).toLocaleString()
         : '—';
       const changeBadge = changeIndicator(u.change);
-      const stockBadge = stockIndicator(u.last_stock_status);
+      const stockBadge = u.url_status === 'unavailable'
+        ? '<span class="stock-badge stock-unavailable">⚠ Unavailable</span>'
+        : stockIndicator(u.last_stock_status);
       const isSelected = u.id === selectedUrlId;
 
       // Updated price: show current price with diff from previous

@@ -76,13 +76,33 @@ export async function scrapeStockStatus(url, existingHtml) {
     if (val.includes('outofstock') || val.includes('out_of_stock')) return 'out_of_stock';
   }
 
-  // Check common stock-related selectors and text patterns
+  // For Amazon: use the buy-box availability element exclusively
+  // (other selectors match unrelated page sections and produce false OOS)
+  const isAmazon = url.includes('amazon.com');
+  if (isAmazon) {
+    const avail = $('#availability').first();
+    if (avail.length) {
+      const text = avail.text().toLowerCase().trim();
+      if (/out of stock|sold out|unavailable|currently unavailable|not available/i.test(text)) {
+        return 'out_of_stock';
+      }
+      if (/in stock|in-stock|available|ships from|only \d+ left/i.test(text)) {
+        return 'in_stock';
+      }
+    }
+    // Add to Cart button presence is a reliable in-stock signal on Amazon
+    const cartBtn = $('[id="add-to-cart-button"], [name="submit.add-to-cart"]').first();
+    if (cartBtn.length && !cartBtn.attr('disabled')) return 'in_stock';
+    return null;
+  }
+
+  // Non-Amazon: check stock-related selectors and text patterns
+  // Use specific selectors first; avoid broad class matchers that cause false positives
   const stockSelectors = [
     '#availability',
-    '[class*="avail"]',
-    '[class*="stock"]',
-    '[id*="stock"]',
     '[data-availability]',
+    '[id*="stock"]',
+    '[class*="availability"]',
   ];
 
   for (const selector of stockSelectors) {

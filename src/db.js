@@ -122,6 +122,12 @@ const watchedCols = db.pragma('table_info(watched_urls)').map(c => c.name);
 if (!watchedCols.includes('last_stock_status')) {
   db.exec(`ALTER TABLE watched_urls ADD COLUMN last_stock_status TEXT`);
 }
+if (!watchedCols.includes('fail_count')) {
+  db.exec(`ALTER TABLE watched_urls ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0`);
+}
+if (!watchedCols.includes('url_status')) {
+  db.exec(`ALTER TABLE watched_urls ADD COLUMN url_status TEXT NOT NULL DEFAULT 'active'`);
+}
 
 // Create stock_history table for tracking availability over time
 db.exec(`

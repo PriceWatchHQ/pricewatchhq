@@ -27,6 +27,8 @@ export default async function dashboardRoutes(app) {
         w.last_stock_status,
         w.last_checked_at,
         w.created_at,
+        w.url_status,
+        w.fail_count,
         (
           SELECT ph.price FROM price_history ph
           WHERE ph.watched_url_id = w.id

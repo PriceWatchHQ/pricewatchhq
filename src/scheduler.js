@@ -52,9 +52,26 @@ export function startScheduler() {
         }
 
         if (price === null && stockStatus === null) {
-          console.log(`[scheduler] No price or stock found for ${entry.url}`);
+          const newFailCount = (entry.fail_count || 0) + 1;
+          console.log(`[scheduler] No price or stock found for ${entry.url} (fail ${newFailCount}/3)`);
+          // After 3 consecutive failures, mark as unavailable
+          if (newFailCount >= 3) {
+            db.prepare(
+              `UPDATE watched_urls SET fail_count = ?, url_status = 'unavailable', last_checked_at = datetime('now') WHERE id = ?`
+            ).run(newFailCount, entry.id);
+            console.log(`[scheduler] Marked ${entry.url} as unavailable after 3 failures`);
+          } else {
+            db.prepare(
+              `UPDATE watched_urls SET fail_count = ?, last_checked_at = datetime('now') WHERE id = ?`
+            ).run(newFailCount, entry.id);
+          }
           continue;
         }
+
+        // Successful scrape — reset fail count and ensure status is active
+        db.prepare(
+          `UPDATE watched_urls SET fail_count = 0, url_status = 'active' WHERE id = ? AND (fail_count > 0 OR url_status != 'active')`
+        ).run(entry.id);
 
         // Log price to price_history
         if (price !== null) {
