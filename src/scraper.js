@@ -1,6 +1,11 @@
 import { load } from 'cheerio';
 import fetch from 'node-fetch';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { scrapePriceAndStockHeadless } from './scraper-headless.js';
+
+// DataImpulse residential proxy
+const PROXY_URL = process.env.PROXY_URL || null;
+const proxyAgent = PROXY_URL ? new HttpsProxyAgent(PROXY_URL) : null;
 
 const PRICE_SELECTORS = [
   '.price',
@@ -19,6 +24,7 @@ export async function scrapePrice(url) {
   const res = await fetch(url, {
     headers: { 'User-Agent': USER_AGENT },
     timeout: 15_000,
+    ...(proxyAgent ? { agent: proxyAgent } : {}),
   });
 
   if (!res.ok) {
@@ -109,6 +115,7 @@ export async function scrapePriceAndStock(url) {
   const res = await fetch(url, {
     headers: { 'User-Agent': USER_AGENT },
     timeout: 15_000,
+    ...(proxyAgent ? { agent: proxyAgent } : {}),
   });
 
   if (!res.ok) {
