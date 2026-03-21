@@ -52,7 +52,7 @@ export default async function dashboardRoutes(app) {
     return reply.send({ urls: result });
   });
 
-  // GET /api/dashboard/urls/:id/history — price history for a URL (last 30)
+  // GET /api/dashboard/urls/:id/history — price history gated by plan historyDays
   app.get('/api/dashboard/urls/:id/history', async (req, reply) => {
     const session = getSession(req);
     if (!session) return reply.status(401).send({ error: 'Not authenticated' });
@@ -64,18 +64,23 @@ export default async function dashboardRoutes(app) {
       .get(id, session.user_id);
     if (!watched) return reply.status(404).send({ error: 'URL not found' });
 
+    const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(session.user_id);
+    const plan = user?.plan || 'free';
+    const historyDays = PLAN_LIMITS[plan]?.historyDays ?? PLAN_LIMITS.free.historyDays;
+    const since = new Date(Date.now() - historyDays * 24 * 60 * 60 * 1000).toISOString();
+
     const history = db.prepare(`
       SELECT price, recorded_at
       FROM price_history
-      WHERE watched_url_id = ?
+      WHERE watched_url_id = ? AND recorded_at >= ?
       ORDER BY recorded_at DESC
-      LIMIT 30
-    `).all(id);
+      LIMIT 1000
+    `).all(id, since);
 
-    return reply.send({ history: history.reverse() });
+    return reply.send({ history: history.reverse(), historyDays });
   });
 
-  // GET /api/dashboard/urls/:id/stock-history — stock history for a URL (last 30)
+  // GET /api/dashboard/urls/:id/stock-history — stock history gated by plan historyDays
   app.get('/api/dashboard/urls/:id/stock-history', async (req, reply) => {
     const session = getSession(req);
     if (!session) return reply.status(401).send({ error: 'Not authenticated' });
@@ -86,15 +91,20 @@ export default async function dashboardRoutes(app) {
       .get(id, session.user_id);
     if (!watched) return reply.status(404).send({ error: 'URL not found' });
 
+    const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(session.user_id);
+    const plan = user?.plan || 'free';
+    const historyDays = PLAN_LIMITS[plan]?.historyDays ?? PLAN_LIMITS.free.historyDays;
+    const since = new Date(Date.now() - historyDays * 24 * 60 * 60 * 1000).toISOString();
+
     const history = db.prepare(`
       SELECT stock_status, recorded_at
       FROM stock_history
-      WHERE watched_url_id = ?
+      WHERE watched_url_id = ? AND recorded_at >= ?
       ORDER BY recorded_at DESC
-      LIMIT 30
-    `).all(id);
+      LIMIT 1000
+    `).all(id, since);
 
-    return reply.send({ history: history.reverse() });
+    return reply.send({ history: history.reverse(), historyDays });
   });
 
   // POST /api/dashboard/urls — add a URL to monitor
@@ -169,6 +179,15 @@ export default async function dashboardRoutes(app) {
     if (!session) return reply.status(401).send({ error: 'Not authenticated' });
 
     const { slack_webhook_url, phone_number } = req.body || {};
+
+    const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(session.user_id);
+    const plan = user?.plan || 'free';
+    const canSlack = PLAN_LIMITS[plan]?.slackAlerts === true;
+
+    // Gate Slack webhook to Business plan
+    if (slack_webhook_url !== undefined && !canSlack) {
+      return reply.status(403).send({ error: 'Slack alerts require a Business plan.' });
+    }
 
     db.prepare(
       'UPDATE users SET slack_webhook_url = ?, phone_number = ? WHERE id = ?'
