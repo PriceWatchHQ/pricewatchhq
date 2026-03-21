@@ -322,9 +322,16 @@ export async function scrapePriceAndStockRetail(url) {
   const retailerStockTextSelectors = retailer?.stockTextSelectors || [];
   const waitForSelector = retailer?.waitFor || '[itemprop="price"], .price';
 
-  // Best Buy: try wreq-js (free, DataImpulse) first, then ZenRows, then browser
+  // Best Buy: BB Official API → wreq-js search → ZenRows → browser
   if (retailerName === 'bestbuy') {
-    // Tier 1: wreq-js + DataImpulse (free)
+    // Tier 1: Best Buy Official API (free, most reliable, real-time)
+    if (BESTBUY_API_KEY) {
+      const apiResult = await scrapeBestBuyViaAPI(url);
+      if (apiResult && apiResult.price !== null) return apiResult;
+      console.log('[scraper-retail] BB API returned no price, falling back to search...');
+    }
+
+    // Tier 2: wreq-js + DataImpulse (free)
     const wreqResult = await scrapeBestBuyViaWreq(url);
     if (wreqResult && wreqResult.price !== null) return wreqResult;
     console.log('[scraper-retail] wreq-js BB returned no price, trying ZenRows...');
@@ -448,6 +455,7 @@ export function isRetailUrl(url) {
 
 const SCRAPERAPI_KEY = process.env.SCRAPERAPI_KEY || null;
 const ZENROWS_KEY = process.env.ZENROWS_KEY || null;
+const BESTBUY_API_KEY = process.env.BESTBUY_API_KEY || null;
 
 /**
  * Extract Walmart product ID from a walmart.com product URL.
@@ -655,6 +663,53 @@ export async function scrapeWalmartViaWreq(url) {
     return price !== null ? { price, stockStatus, retailer: 'walmart' } : null;
   } catch (err) {
     console.error('[scraper-retail] wreq-js Walmart error:', err.message?.slice(0, 100));
+    return null;
+  }
+}
+
+/**
+ * Scrape Best Buy using the official Best Buy Products API.
+ * Free, no proxy needed, real-time pricing including gaming consoles and audio.
+ * Requires BESTBUY_API_KEY env var (free from developer.bestbuy.com).
+ */
+export async function scrapeBestBuyViaAPI(url) {
+  if (!BESTBUY_API_KEY) return null;
+
+  // Extract SKU from URL: /site/product-slug/6447382.p
+  const skuMatch = url.match(/\/(\d+)\.p/);
+  if (!skuMatch) return null;
+  const sku = skuMatch[1];
+
+  try {
+    console.log(`[scraper-retail] BB API lookup for sku=${sku}`);
+
+    // Add small delay to respect per-second rate limit
+    await new Promise(r => setTimeout(r, 300));
+
+    const apiUrl = `https://api.bestbuy.com/v1/products/${sku}.json?show=sku,name,salePrice,regularPrice,onSale,onlineAvailability&apiKey=${BESTBUY_API_KEY}`;
+    const res = await wreqGet(apiUrl, { browser: 'chrome_131', os: 'windows' });
+
+    if (!res.ok) {
+      console.error(`[scraper-retail] BB API returned ${res.status} for sku=${sku}`);
+      return null;
+    }
+
+    const data = await res.json();
+
+    const rawPrice = data.salePrice ?? data.regularPrice;
+    let price = null;
+    if (rawPrice != null) {
+      const num = parseFloat(rawPrice);
+      if (Number.isFinite(num) && num > 0 && num <= 100000) price = num;
+    }
+
+    const stockStatus = data.onlineAvailability === true ? 'in_stock'
+      : data.onlineAvailability === false ? 'out_of_stock' : null;
+
+    console.log(`[scraper-retail] BB API result: sku=${sku}, price=${price}, stock=${stockStatus}, onSale=${data.onSale}`);
+    return price !== null ? { price, stockStatus, retailer: 'bestbuy' } : null;
+  } catch (err) {
+    console.error('[scraper-retail] BB API error:', err.message?.slice(0, 100));
     return null;
   }
 }
