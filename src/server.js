@@ -162,6 +162,7 @@ app.get('/admin/upgrade', async (req, reply) => {
   const { email, plan, secret } = req.query;
   if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
   if (!email || !plan) return reply.status(400).send({ error: 'email and plan required' });
+  const db = getDb();
   const result = db.prepare('UPDATE users SET plan = ? WHERE email = ?').run(plan, email);
   if (result.changes === 0) return reply.status(404).send({ error: 'User not found' });
   return { success: true, email, plan };
