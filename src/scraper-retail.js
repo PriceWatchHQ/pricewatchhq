@@ -286,6 +286,13 @@ export async function scrapePriceAndStockRetail(url) {
   const retailerStockTextSelectors = retailer?.stockTextSelectors || [];
   const waitForSelector = retailer?.waitFor || '[itemprop="price"], .price';
 
+  // Best Buy: use ZenRows (handles international redirect + price extraction)
+  if (retailerName === 'bestbuy' && ZENROWS_KEY) {
+    const bbResult = await scrapeBestBuyViaZenRows(url);
+    if (bbResult && bbResult.price !== null) return bbResult;
+    console.log('[scraper-retail] ZenRows Best Buy returned no price, falling back to browser');
+  }
+
   // Walmart: try ZenRows first (best Walmart support), then ScraperAPI, then browser
   if (retailerName === 'walmart') {
     if (ZENROWS_KEY) {
@@ -459,6 +466,75 @@ export async function scrapeWalmartViaZenRows(url) {
     return { price, stockStatus, retailer: 'walmart' };
   } catch (err) {
     console.error(`[scraper-retail] ZenRows Walmart error:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Scrape Best Buy using ZenRows.
+ * Best Buy redirects non-US IPs to an international page — ZenRows handles this.
+ * Price extracted from analytics-metadata tag, stock from buttonState JSON.
+ */
+export async function scrapeBestBuyViaZenRows(url) {
+  if (!ZENROWS_KEY) return null;
+
+  // Add intl=nosplash to bypass country selector, retry up to 3 times for consistent US IP
+  const bbUrl = url.includes('?') ? `${url}&intl=nosplash` : `${url}?intl=nosplash`;
+  const apiUrl = `https://api.zenrows.com/v1/?apikey=${ZENROWS_KEY}&url=${encodeURIComponent(bbUrl)}&premium_proxy=true&js_render=true&wait=3000`;
+
+  try {
+    console.log(`[scraper-retail] ZenRows Best Buy lookup: ${url}`);
+    const res = await fetch(apiUrl, { timeout: 45_000 });
+
+    if (!res.ok) {
+      console.error(`[scraper-retail] ZenRows Best Buy returned ${res.status}`);
+      return null;
+    }
+
+    const html = await res.text();
+
+    if (html.includes('Select your Country') || html.length < 10000) {
+      console.error('[scraper-retail] ZenRows Best Buy: international redirect or empty page');
+      return null;
+    }
+
+    // Price from analytics-metadata content attribute
+    let price = null;
+    const metaMatch = html.match(/name="analytics-metadata"[^>]*content="([^"]+)"/);
+    if (metaMatch) {
+      try {
+        const metaData = JSON.parse(metaMatch[1].replace(/&quot;/g, '"'));
+        const rawPrice = metaData?.product?.price;
+        if (rawPrice != null) {
+          const num = parseFloat(String(rawPrice).replace(/[^0-9.]/g, ''));
+          if (Number.isFinite(num) && num > 0 && num <= 100000) price = num;
+        }
+      } catch {}
+    }
+
+    // Stock: check driver SKU buttonState in Apollo/GraphQL SSR data
+    let stockStatus = null;
+    const driverMatch = html.match(/"driverSku":true,"buttonState":"([^"]+)"/);
+    if (driverMatch) {
+      const state = driverMatch[1];
+      if (state === 'ADD_TO_CART' || state === 'BUY_NOW') stockStatus = 'in_stock';
+      else if (state === 'SOLD_OUT' || state === 'CHECK_STORES' || state === 'COMING_SOON') stockStatus = 'out_of_stock';
+    }
+
+    // Fallback: if no driver SKU, check fulfillment button state
+    if (!stockStatus) {
+      const btnMatch = html.match(/"buttonStates":\[{"__typename":"ButtonState","buttonState":"([^"]+)"/);
+      if (btnMatch) {
+        const state = btnMatch[1];
+        if (state === 'ADD_TO_CART' || state === 'BUY_NOW') stockStatus = 'in_stock';
+        else if (state === 'SOLD_OUT') stockStatus = 'out_of_stock';
+      }
+    }
+
+    console.log(`[scraper-retail] ZenRows Best Buy result: price=${price}, stock=${stockStatus}`);
+    return { price, stockStatus, retailer: 'bestbuy' };
+  } catch (err) {
+    console.error('[scraper-retail] ZenRows Best Buy error:', err.message);
     return null;
   }
 }
