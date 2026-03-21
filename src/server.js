@@ -185,6 +185,30 @@ app.post('/admin/bulk-urls', async (req, reply) => {
   }
   return { success: true, added: count };
 });
+
+// Temp admin: force scrape all URLs for a user
+app.get('/admin/force-scrape', async (req, reply) => {
+  const { secret } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const { scrapePriceAndStock } = await import('./scraper.js');
+  const db = getDb();
+  const urls = db.prepare('SELECT * FROM watched_urls').all();
+  let updated = 0;
+  for (const entry of urls) {
+    try {
+      const { price, stockStatus } = await scrapePriceAndStock(entry.url);
+      if (price !== null || stockStatus !== null) {
+        db.prepare('UPDATE watched_urls SET last_price = COALESCE(?, last_price), last_stock_status = COALESCE(?, last_stock_status), last_checked_at = datetime("now") WHERE id = ?')
+          .run(price, stockStatus, entry.id);
+        updated++;
+      }
+    } catch (e) {
+      console.error('[force-scrape] Error on', entry.url, e.message);
+    }
+  }
+  return { success: true, updated, total: urls.length };
+});
+
 // Start server
 try {
   await app.listen({ port: PORT, host: '0.0.0.0' });
