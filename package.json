@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "postinstall": "npx patchright install chromium || true && npx playwright install chromium || true"
+    "postinstall": "npx patchright install chromium || true && npx playwright install chromium || true",
+    "deploy:pages": "wrangler pages deploy public --project-name pricewatchhq"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.79.0",
