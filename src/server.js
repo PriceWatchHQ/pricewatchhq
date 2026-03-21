@@ -177,3 +177,20 @@ try {
   app.log.error(err);
   process.exit(1);
 }
+
+// Temp admin: bulk add URLs for a user
+app.post('/admin/bulk-urls', async (req, reply) => {
+  const { email, secret, urls } = req.body || {};
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  if (!user) return reply.status(404).send({ error: 'User not found' });
+  const stmt = db.prepare('INSERT INTO watched_urls (user_id, url, label, created_at) VALUES (?, ?, ?, ?)');
+  const now = new Date().toISOString();
+  let count = 0;
+  for (const { url, label } of urls) {
+    stmt.run(user.id, url, label, now);
+    count++;
+  }
+  return { success: true, added: count };
+});
