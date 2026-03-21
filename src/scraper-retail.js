@@ -1,6 +1,7 @@
 // Patchright patches the TLS/JA3 fingerprint to match real Chrome,
 // bypassing Akamai/PerimeterX bot detection that blocks playwright-extra.
 import { chromium } from 'patchright';
+import { get as wreqGet } from 'wreq-js';
 
 const PROXY_URL = process.env.PROXY_URL || null;
 const MAX_RETRIES = 3;
@@ -286,15 +287,28 @@ export async function scrapePriceAndStockRetail(url) {
   const retailerStockTextSelectors = retailer?.stockTextSelectors || [];
   const waitForSelector = retailer?.waitFor || '[itemprop="price"], .price';
 
-  // Best Buy: use ZenRows (handles international redirect + price extraction)
-  if (retailerName === 'bestbuy' && ZENROWS_KEY) {
-    const bbResult = await scrapeBestBuyViaZenRows(url);
-    if (bbResult && bbResult.price !== null) return bbResult;
-    console.log('[scraper-retail] ZenRows Best Buy returned no price, falling back to browser');
+  // Best Buy: try wreq-js (free, DataImpulse) first, then ZenRows, then browser
+  if (retailerName === 'bestbuy') {
+    // Tier 1: wreq-js + DataImpulse (free)
+    const wreqResult = await scrapeBestBuyViaWreq(url);
+    if (wreqResult && wreqResult.price !== null) return wreqResult;
+    console.log('[scraper-retail] wreq-js BB returned no price, trying ZenRows...');
+
+    // Tier 2: ZenRows (paid, handles client-side rendered prices)
+    if (ZENROWS_KEY) {
+      const bbResult = await scrapeBestBuyViaZenRows(url);
+      if (bbResult && bbResult.price !== null) return bbResult;
+      console.log('[scraper-retail] ZenRows BB returned no price, falling back to browser');
+    }
   }
 
-  // Walmart: try ZenRows first (best Walmart support), then ScraperAPI, then browser
+  // Walmart: try wreq-js (free) first, then ZenRows, then browser
   if (retailerName === 'walmart') {
+    // Tier 1: wreq-js + DataImpulse (free)
+    const wreqWalmartResult = await scrapeWalmartViaWreq(url);
+    if (wreqWalmartResult && wreqWalmartResult.price !== null) return wreqWalmartResult;
+    console.log('[scraper-retail] wreq-js Walmart returned no price, trying ZenRows...');
+
     if (ZENROWS_KEY) {
       const zrResult = await scrapeWalmartViaZenRows(url);
       if (zrResult && zrResult.price !== null) return zrResult;
@@ -466,6 +480,155 @@ export async function scrapeWalmartViaZenRows(url) {
     return { price, stockStatus, retailer: 'walmart' };
   } catch (err) {
     console.error(`[scraper-retail] ZenRows Walmart error:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Scrape Walmart using wreq-js (Rust-native Chrome TLS/H2 fingerprint) + DataImpulse proxy.
+ * Walmart embeds full product data in __NEXT_DATA__ — no browser needed if TLS passes.
+ */
+export async function scrapeWalmartViaWreq(url) {
+  if (!PROXY_URL) return null;
+
+  const productId = extractWalmartProductId(url);
+  if (!productId) return null;
+
+  try {
+    console.log(`[scraper-retail] wreq-js Walmart lookup for product_id=${productId}`);
+
+    const res = await wreqGet(url, {
+      browser: 'chrome_131',
+      os: 'windows',
+      proxy: PROXY_URL,
+      headers: {
+        'accept-language': 'en-US,en;q=0.9',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+
+    if (!res.ok) {
+      console.error(`[scraper-retail] wreq-js Walmart returned ${res.status}`);
+      return null;
+    }
+
+    const html = await res.text();
+
+    if (html.includes('Robot or human') || html.length < 5000) {
+      console.error('[scraper-retail] wreq-js Walmart: captcha/robot page');
+      return null;
+    }
+
+    // Extract __NEXT_DATA__
+    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+    if (!nextDataMatch) {
+      console.error('[scraper-retail] wreq-js Walmart: no __NEXT_DATA__');
+      return null;
+    }
+
+    const pageData = JSON.parse(nextDataMatch[1]);
+    const product = pageData?.props?.pageProps?.initialData?.data?.product;
+    if (!product) return null;
+
+    let price = null;
+    const rawPrice = product?.priceInfo?.currentPrice?.price;
+    if (rawPrice != null) {
+      const num = parseFloat(String(rawPrice).replace(/[^0-9.]/g, ''));
+      if (Number.isFinite(num) && num > 0 && num <= 100000) price = num;
+    }
+
+    let stockStatus = null;
+    const avail = product?.availabilityStatus;
+    if (avail === 'IN_STOCK') stockStatus = 'in_stock';
+    else if (avail === 'OUT_OF_STOCK' || avail === 'UNAVAILABLE') stockStatus = 'out_of_stock';
+
+    console.log(`[scraper-retail] wreq-js Walmart result: price=${price}, stock=${stockStatus}`);
+    return price !== null ? { price, stockStatus, retailer: 'walmart' } : null;
+  } catch (err) {
+    console.error('[scraper-retail] wreq-js Walmart error:', err.message?.slice(0, 100));
+    return null;
+  }
+}
+
+/**
+ * Scrape Best Buy using wreq-js (Rust-native Chrome TLS/H2 fingerprint) + DataImpulse proxy.
+ *
+ * Best Buy's Akamai Bot Manager blocks product page URLs (/site/.../SKU.p) even with
+ * correct fingerprinting. The workaround: search for the product by slug keyword,
+ * then extract price by matching SKU in the search results JSON.
+ *
+ * Cost: $0 (uses existing DataImpulse proxy, no ZenRows credits).
+ * Coverage: ~70% of active products. Falls back to ZenRows for the rest.
+ */
+export async function scrapeBestBuyViaWreq(url) {
+  if (!PROXY_URL) return null;
+
+  // Extract slug and SKU from URL: /site/product-slug/6447382.p
+  const match = url.match(/bestbuy\.com\/site\/([^\/]+)\/(\d+)\.p/);
+  if (!match) return null;
+  const [, slug, skuId] = match;
+
+  // Convert slug to search term
+  const searchTerm = slug.replace(/-/g, ' ').slice(0, 60);
+  const searchUrl = `https://www.bestbuy.com/site/searchpage.jsp?st=${encodeURIComponent(searchTerm)}&intl=nosplash`;
+
+  try {
+    console.log(`[scraper-retail] wreq-js Best Buy search for sku=${skuId}: "${searchTerm.slice(0, 40)}"`);
+
+    const res = await wreqGet(searchUrl, {
+      browser: 'chrome_131',
+      os: 'windows',
+      proxy: PROXY_URL,
+      headers: { 'accept-language': 'en-US,en;q=0.9' },
+    });
+
+    if (!res.ok) {
+      console.error(`[scraper-retail] wreq-js BB search returned ${res.status}`);
+      return null;
+    }
+
+    const html = await res.text();
+
+    if (html.includes('Select your Country') || html.length < 10000) {
+      console.error('[scraper-retail] wreq-js BB: international redirect or empty');
+      return null;
+    }
+
+    // Extract all SKU→price pairs from Apollo/Next.js SSR data
+    const pairs = [...html.matchAll(/"skuId":"(\d+)"[^}]{0,500}"customerPrice":(\d+\.?\d*)/g)];
+
+    let price = null;
+    let matchType = null;
+
+    // Try exact SKU match first
+    const exact = pairs.find(([, s]) => s === skuId);
+    if (exact) {
+      price = parseFloat(exact[2]);
+      matchType = 'exact';
+    } else if (pairs.length > 0) {
+      // Fall back to first result (likely the same product, just a newer SKU)
+      price = parseFloat(pairs[0][2]);
+      matchType = 'first-result';
+    }
+
+    // Stock: check if SKU has a driverSku buttonState in the page
+    let stockStatus = null;
+    const driverMatch = html.match(/"driverSku":true,"buttonState":"([^"]+)"/);
+    if (driverMatch) {
+      const state = driverMatch[1];
+      if (state === 'ADD_TO_CART' || state === 'BUY_NOW') stockStatus = 'in_stock';
+      else if (state === 'SOLD_OUT' || state === 'COMING_SOON') stockStatus = 'out_of_stock';
+    }
+
+    // Infer stock from add-to-cart button text if no driver state
+    if (!stockStatus && price !== null) {
+      stockStatus = 'in_stock'; // if we have a price from search, it's likely in stock
+    }
+
+    console.log(`[scraper-retail] wreq-js BB result: price=${price} (${matchType}), stock=${stockStatus}`);
+    return price !== null ? { price, stockStatus, retailer: 'bestbuy' } : null;
+  } catch (err) {
+    console.error('[scraper-retail] wreq-js BB error:', err.message?.slice(0, 100));
     return null;
   }
 }
