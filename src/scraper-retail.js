@@ -677,61 +677,63 @@ export async function scrapeBestBuyViaWreq(url) {
   if (!match) return null;
   const [, slug, skuId] = match;
 
-  // Convert slug to search term
-  const searchTerm = slug.replace(/-/g, ' ').slice(0, 60);
-  const searchUrl = `https://www.bestbuy.com/site/searchpage.jsp?st=${encodeURIComponent(searchTerm)}&intl=nosplash`;
+  // Generate multiple search term variations to maximize chance of finding prices
+  const base = slug.replace(/-/g, ' ');
+  const words = base.split(' ').filter(w => w.length > 1);
+  const searchVariations = [
+    base.slice(0, 50),
+    words.slice(0, 5).join(' '),
+    words.filter(w => !/^\d+$/.test(w)).join(' ').slice(0, 40),
+    words.slice(1).join(' ').slice(0, 40),
+  ].filter((v, i, a) => v.length > 3 && a.indexOf(v) === i);
+
+  let price = null;
+  let matchType = null;
+  let stockStatus = null;
 
   try {
-    console.log(`[scraper-retail] wreq-js Best Buy search for sku=${skuId}: "${searchTerm.slice(0, 40)}"`);
+    for (const searchTerm of searchVariations) {
+      console.log(`[scraper-retail] wreq-js Best Buy search for sku=${skuId}: "${searchTerm.slice(0, 40)}"`);
 
-    const res = await wreqGet(searchUrl, {
-      browser: 'chrome_131',
-      os: 'windows',
-      proxy: PROXY_URL,
-      headers: { 'accept-language': 'en-US,en;q=0.9' },
-    });
+      const searchUrl = `https://www.bestbuy.com/site/searchpage.jsp?st=${encodeURIComponent(searchTerm)}&intl=nosplash`;
+      const res = await wreqGet(searchUrl, {
+        browser: 'chrome_131',
+        os: 'windows',
+        proxy: PROXY_URL,
+        headers: { 'accept-language': 'en-US,en;q=0.9' },
+      });
 
-    if (!res.ok) {
-      console.error(`[scraper-retail] wreq-js BB search returned ${res.status}`);
-      return null;
+      if (!res.ok) continue;
+      const html = await res.text();
+      if (html.includes('Select your Country') || html.length < 10000) continue;
+
+      // Extract all SKU→price pairs from Apollo/Next.js SSR data
+      const pairs = [...html.matchAll(/"skuId":"(\d+)"[^}]{0,500}"customerPrice":(\d+\.?\d*)/g)];
+
+      // Try exact SKU match first
+      const exact = pairs.find(([, s]) => s === skuId);
+      if (exact) {
+        price = parseFloat(exact[2]);
+        matchType = 'exact';
+
+        // Stock from this page
+        const dm = html.match(/"driverSku":true,"buttonState":"([^"]+)"/);
+        if (dm) {
+          const state = dm[1];
+          stockStatus = (state === 'ADD_TO_CART' || state === 'BUY_NOW') ? 'in_stock'
+            : (state === 'SOLD_OUT' || state === 'COMING_SOON') ? 'out_of_stock' : null;
+        }
+        break;
+      } else if (pairs.length > 0 && !price) {
+        price = parseFloat(pairs[0][2]);
+        matchType = 'first-result';
+        // Keep trying other variations for an exact match
+      }
     }
 
-    const html = await res.text();
-
-    if (html.includes('Select your Country') || html.length < 10000) {
-      console.error('[scraper-retail] wreq-js BB: international redirect or empty');
-      return null;
-    }
-
-    // Extract all SKU→price pairs from Apollo/Next.js SSR data
-    const pairs = [...html.matchAll(/"skuId":"(\d+)"[^}]{0,500}"customerPrice":(\d+\.?\d*)/g)];
-
-    let price = null;
-    let matchType = null;
-
-    // Try exact SKU match first
-    const exact = pairs.find(([, s]) => s === skuId);
-    if (exact) {
-      price = parseFloat(exact[2]);
-      matchType = 'exact';
-    } else if (pairs.length > 0) {
-      // Fall back to first result (likely the same product, just a newer SKU)
-      price = parseFloat(pairs[0][2]);
-      matchType = 'first-result';
-    }
-
-    // Stock: check if SKU has a driverSku buttonState in the page
-    let stockStatus = null;
-    const driverMatch = html.match(/"driverSku":true,"buttonState":"([^"]+)"/);
-    if (driverMatch) {
-      const state = driverMatch[1];
-      if (state === 'ADD_TO_CART' || state === 'BUY_NOW') stockStatus = 'in_stock';
-      else if (state === 'SOLD_OUT' || state === 'COMING_SOON') stockStatus = 'out_of_stock';
-    }
-
-    // Infer stock from add-to-cart button text if no driver state
+    // Infer stock if not already set
     if (!stockStatus && price !== null) {
-      stockStatus = 'in_stock'; // if we have a price from search, it's likely in stock
+      stockStatus = 'in_stock'; // price in search results implies in stock
     }
 
     console.log(`[scraper-retail] wreq-js BB result: price=${price} (${matchType}), stock=${stockStatus}`);
