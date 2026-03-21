@@ -307,15 +307,22 @@ export async function scrapePriceAndStockRetail(url) {
       // Navigate — use domcontentloaded since networkidle can hang on tracker-heavy sites
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
 
-      // Allow JS to hydrate after initial load
-      await page.waitForTimeout(4000);
+      // Allow JS to hydrate — Menards-style: give the page time to settle
+      await page.waitForTimeout(5000);
+
+      // Simulate human scroll to trigger lazy-loaded price elements
+      await page.mouse.wheel(0, 300);
+      await page.waitForTimeout(2000);
 
       // Try to wait for a price selector to appear (soft — don't fail if it times out)
       try {
-        await page.waitForSelector(waitForSelector, { timeout: 8_000 });
+        await page.waitForSelector(waitForSelector, { timeout: 10_000 });
       } catch {
         // Selector didn't appear — might be blocked or page structure changed
       }
+
+      // Extra settle time after selector wait
+      await page.waitForTimeout(2000);
 
       // Block detection: restart browser to rotate proxy IP
       if (await isPageBlocked(page)) {
