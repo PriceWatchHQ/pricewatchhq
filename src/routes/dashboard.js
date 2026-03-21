@@ -24,6 +24,7 @@ export default async function dashboardRoutes(app) {
         w.label,
         w.url,
         w.last_price,
+        w.last_stock_status,
         w.last_checked_at,
         w.created_at,
         (
@@ -64,6 +65,28 @@ export default async function dashboardRoutes(app) {
     const history = db.prepare(`
       SELECT price, recorded_at
       FROM price_history
+      WHERE watched_url_id = ?
+      ORDER BY recorded_at DESC
+      LIMIT 30
+    `).all(id);
+
+    return reply.send({ history: history.reverse() });
+  });
+
+  // GET /api/dashboard/urls/:id/stock-history — stock history for a URL (last 30)
+  app.get('/api/dashboard/urls/:id/stock-history', async (req, reply) => {
+    const session = getSession(req);
+    if (!session) return reply.status(401).send({ error: 'Not authenticated' });
+
+    const { id } = req.params;
+
+    const watched = db.prepare('SELECT * FROM watched_urls WHERE id = ? AND user_id = ?')
+      .get(id, session.user_id);
+    if (!watched) return reply.status(404).send({ error: 'URL not found' });
+
+    const history = db.prepare(`
+      SELECT stock_status, recorded_at
+      FROM stock_history
       WHERE watched_url_id = ?
       ORDER BY recorded_at DESC
       LIMIT 30

@@ -32,6 +32,7 @@ export default async function publicApiRoutes(app) {
         w.label,
         w.url,
         w.last_price,
+        w.last_stock_status,
         w.last_checked_at,
         w.created_at
       FROM watched_urls w

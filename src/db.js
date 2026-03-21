@@ -117,5 +117,22 @@ if (!userCols.includes('phone_number')) {
   db.exec(`ALTER TABLE users ADD COLUMN phone_number TEXT`);
 }
 
+// Add stock availability tracking columns to watched_urls
+const watchedCols = db.pragma('table_info(watched_urls)').map(c => c.name);
+if (!watchedCols.includes('last_stock_status')) {
+  db.exec(`ALTER TABLE watched_urls ADD COLUMN last_stock_status TEXT`);
+}
+
+// Create stock_history table for tracking availability over time
+db.exec(`
+  CREATE TABLE IF NOT EXISTS stock_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    watched_url_id INTEGER NOT NULL,
+    stock_status TEXT NOT NULL,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (watched_url_id) REFERENCES watched_urls(id) ON DELETE CASCADE
+  );
+`);
+
 export default db;
 export function getDb() { return db; }

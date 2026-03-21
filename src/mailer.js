@@ -203,6 +203,126 @@ export async function sendSlackAlert({ webhookUrl, label, url, oldPrice, newPric
 }
 
 /**
+ * Send a stock availability change alert email.
+ */
+export async function sendStockAlert({ to, label, url, oldStatus, newStatus }) {
+  const emoji = newStatus === 'in_stock' ? '🟢' : '🔴';
+  const statusLabel = s => s === 'in_stock' ? 'In Stock' : 'Out of Stock';
+  const subject = `${emoji} Stock alert: ${label || url} is now ${statusLabel(newStatus)}`;
+
+  const html = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1a1a1a;">Stock Alert ${emoji}</h2>
+      <p>A stock change was detected for <strong>${label || url}</strong>:</p>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr>
+          <td style="padding: 12px; background: #f5f5f5; font-weight: bold;">Previous Status</td>
+          <td style="padding: 12px; background: #f5f5f5;">${statusLabel(oldStatus)}</td>
+        </tr>
+        <tr>
+          <td style="padding: 12px; font-weight: bold;">Current Status</td>
+          <td style="padding: 12px; color: ${newStatus === 'in_stock' ? '#16a34a' : '#dc2626'}; font-size: 1.2em; font-weight: bold;">
+            ${statusLabel(newStatus)}
+          </td>
+        </tr>
+      </table>
+      <p><a href="${url}" style="color: #2563eb;">View product →</a></p>
+      <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 30px 0;" />
+      <p style="color: #666; font-size: 0.85em;">
+        You're receiving this because you're monitoring this URL with PriceWatch HQ.<br/>
+        <a href="https://pricewatchhq.com">pricewatchhq.com</a>
+      </p>
+    </div>
+  `;
+
+  await getResend().emails.send({
+    from: FROM(),
+    to,
+    subject,
+    html,
+  });
+
+  console.log(`[mailer] Stock alert sent to ${to} for ${label || url}`);
+}
+
+/**
+ * Send a Slack webhook alert for a stock change.
+ */
+export async function sendSlackStockAlert({ webhookUrl, label, url, oldStatus, newStatus }) {
+  if (!webhookUrl) return;
+
+  const emoji = newStatus === 'in_stock' ? '🟢' : '🔴';
+  const statusLabel = s => s === 'in_stock' ? 'In Stock' : 'Out of Stock';
+  const color = newStatus === 'in_stock' ? '#34D399' : '#F87171';
+
+  const payload = {
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*PriceWatch Stock Alert* ${emoji}\n*${label || url}* is now *${statusLabel(newStatus)}*`,
+        },
+      },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `*Previous*\n${statusLabel(oldStatus)}` },
+          { type: 'mrkdwn', text: `*Current*\n${statusLabel(newStatus)}` },
+        ],
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'View Product →' },
+            url,
+          },
+        ],
+      },
+    ],
+    attachments: [{ color }],
+  };
+
+  const res = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Slack webhook failed: ${res.status}`);
+  }
+
+  console.log(`[mailer] Slack stock alert sent for ${label || url}`);
+}
+
+/**
+ * Send an SMS alert via Twilio for a stock change.
+ */
+export async function sendSmsStockAlert({ to, label, url, oldStatus, newStatus }) {
+  if (!to) return;
+
+  const client = await getTwilio();
+  if (!client) {
+    console.warn('[mailer] Twilio not configured — skipping SMS stock alert');
+    return;
+  }
+
+  const statusLabel = s => s === 'in_stock' ? 'In Stock' : 'Out of Stock';
+  const body = `PriceWatch Stock Alert: ${label || url} is now ${statusLabel(newStatus)} (was ${statusLabel(oldStatus)}). View: ${url}`;
+
+  await client.messages.create({
+    body,
+    from: process.env.TWILIO_PHONE_NUMBER,
+    to,
+  });
+
+  console.log(`[mailer] SMS stock alert sent to ${to} for ${label || url}`);
+}
+
+/**
  * Send an SMS alert via Twilio for a price change.
  */
 export async function sendSmsAlert({ to, label, url, oldPrice, newPrice }) {

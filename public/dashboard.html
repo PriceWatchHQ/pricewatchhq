@@ -404,6 +404,18 @@
     .change-up { background: rgba(248, 113, 113, 0.12); color: var(--red); }
     .change-down { background: rgba(52, 211, 153, 0.12); color: var(--green); }
     .change-same { background: rgba(148, 163, 184, 0.1); color: var(--text-muted); }
+    .stock-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+    }
+    .stock-in { background: rgba(52, 211, 153, 0.12); color: var(--green); }
+    .stock-out { background: rgba(248, 113, 113, 0.12); color: var(--red); }
+    .stock-unknown { background: rgba(148, 163, 184, 0.1); color: var(--text-muted); }
     .btn-delete {
       background: transparent;
       border: 1px solid var(--border);
@@ -736,13 +748,14 @@
               <th>Label</th>
               <th>URL</th>
               <th>Last Price</th>
+              <th>Stock</th>
               <th>Last Checked</th>
               <th>Change</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="urls-tbody">
-            <tr><td colspan="6" class="empty-state">Loading…</td></tr>
+            <tr><td colspan="7" class="empty-state">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -897,7 +910,7 @@
       renderUrls(urls);
     } catch {
       document.getElementById('urls-tbody').innerHTML =
-        '<tr><td colspan="6" class="empty-state">Failed to load URLs.</td></tr>';
+        '<tr><td colspan="7" class="empty-state">Failed to load URLs.</td></tr>';
     } finally {
       document.getElementById('urls-loading').innerHTML = '';
     }
@@ -906,7 +919,7 @@
   function renderUrls(urls) {
     const tbody = document.getElementById('urls-tbody');
     if (!urls || urls.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No URLs monitored yet. Add one above!</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No URLs monitored yet. Add one above!</td></tr>';
       return;
     }
 
@@ -916,11 +929,13 @@
         ? new Date(u.last_checked_at).toLocaleString()
         : '—';
       const changeBadge = changeIndicator(u.change);
+      const stockBadge = stockIndicator(u.last_stock_status);
       const isSelected = u.id === selectedUrlId;
       return `<tr data-id="${u.id}" class="${isSelected ? 'selected' : ''}">
         <td><strong>${escHtml(u.label || '—')}</strong></td>
         <td class="url-cell"><a href="${escHtml(u.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${escHtml(u.url)}</a></td>
         <td>${price}</td>
+        <td>${stockBadge}</td>
         <td style="color:var(--text-muted);font-size:0.85rem">${checked}</td>
         <td>${changeBadge}</td>
         <td><button class="btn-delete" onclick="deleteUrl(event,${u.id})">Remove</button></td>
@@ -940,6 +955,12 @@
     if (change === 'up') return '<span class="change-badge change-up">▲ Up</span>';
     if (change === 'down') return '<span class="change-badge change-down">▼ Down</span>';
     return '<span class="change-badge change-same">— Same</span>';
+  }
+
+  function stockIndicator(status) {
+    if (status === 'in_stock') return '<span class="stock-badge stock-in">● In Stock</span>';
+    if (status === 'out_of_stock') return '<span class="stock-badge stock-out">● Out of Stock</span>';
+    return '<span class="stock-badge stock-unknown">— Unknown</span>';
   }
 
   // ===== LOAD STATS =====

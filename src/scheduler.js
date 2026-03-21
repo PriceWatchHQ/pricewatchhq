@@ -1,9 +1,9 @@
 import cron from 'node-cron';
 import db from './db.js';
-import { scrapePrice } from './scraper.js';
+import { scrapePrice, scrapePriceAndStock } from './scraper.js';
 import { runPoster } from './poster.js';
 import { runEngager } from './engager.js';
-import { sendPriceAlert, sendSlackAlert, sendSmsAlert } from './mailer.js';
+import { sendPriceAlert, sendSlackAlert, sendSmsAlert, sendStockAlert, sendSlackStockAlert, sendSmsStockAlert } from './mailer.js';
 import { PLAN_LIMITS } from './plans.js';
 
 /**
@@ -36,64 +36,111 @@ export function startScheduler() {
           }
         }
 
-        const price = await scrapePrice(entry.url);
+        const { price, stockStatus } = await scrapePriceAndStock(entry.url);
 
-        if (price === null) {
-          console.log(`[scheduler] No price found for ${entry.url}`);
+        if (price === null && stockStatus === null) {
+          console.log(`[scheduler] No price or stock found for ${entry.url}`);
           continue;
         }
 
-        // Log to price_history
-        db.prepare(
-          'INSERT INTO price_history (watched_url_id, price) VALUES (?, ?)'
-        ).run(entry.id, price);
+        // Log price to price_history
+        if (price !== null) {
+          db.prepare(
+            'INSERT INTO price_history (watched_url_id, price) VALUES (?, ?)'
+          ).run(entry.id, price);
+        }
 
-        // Detect change and send alert
-        if (entry.last_price !== null && price !== entry.last_price) {
+        // Log stock status to stock_history
+        if (stockStatus !== null) {
+          db.prepare(
+            'INSERT INTO stock_history (watched_url_id, stock_status) VALUES (?, ?)'
+          ).run(entry.id, stockStatus);
+        }
+
+        // Get user for alerts
+        let alertUser = null;
+        if (entry.user_id) {
+          alertUser = db.prepare(
+            'SELECT email, plan, phone_number, slack_webhook_url FROM users WHERE id = ?'
+          ).get(entry.user_id);
+        }
+        const alertPlan = alertUser?.plan || 'free';
+
+        // Detect price change and send alert
+        if (price !== null && entry.last_price !== null && price !== entry.last_price) {
           const direction = price < entry.last_price ? 'DROPPED' : 'INCREASED';
           console.log(
             `[alert] Price ${direction} for "${entry.label || entry.url}": ` +
             `$${entry.last_price} → $${price}`
           );
 
-          // Get user and send alerts based on plan
-          if (entry.user_id) {
-            const user = db.prepare(
-              'SELECT email, plan, phone_number, slack_webhook_url FROM users WHERE id = ?'
-            ).get(entry.user_id);
+          if (alertUser?.email) {
+            const alertArgs = {
+              label: entry.label,
+              url: entry.url,
+              oldPrice: entry.last_price,
+              newPrice: price,
+            };
 
-            if (user?.email) {
-              const alertArgs = {
-                label: entry.label,
-                url: entry.url,
-                oldPrice: entry.last_price,
-                newPrice: price,
-              };
-              const plan = user.plan || 'free';
+            // All plans: email
+            sendPriceAlert({ to: alertUser.email, ...alertArgs })
+              .catch(err => console.error('[mailer] Failed to send email alert:', err.message));
 
-              // All plans: email
-              sendPriceAlert({ to: user.email, ...alertArgs })
-                .catch(err => console.error('[mailer] Failed to send email alert:', err.message));
+            // Pro+: SMS
+            if ((alertPlan === 'pro' || alertPlan === 'business') && alertUser.phone_number) {
+              sendSmsAlert({ to: alertUser.phone_number, ...alertArgs })
+                .catch(err => console.error('[mailer] Failed to send SMS alert:', err.message));
+            }
 
-              // Pro+: SMS
-              if ((plan === 'pro' || plan === 'business') && user.phone_number) {
-                sendSmsAlert({ to: user.phone_number, ...alertArgs })
-                  .catch(err => console.error('[mailer] Failed to send SMS alert:', err.message));
-              }
-
-              // Business: Slack
-              if (plan === 'business' && user.slack_webhook_url) {
-                sendSlackAlert({ webhookUrl: user.slack_webhook_url, ...alertArgs })
-                  .catch(err => console.error('[mailer] Failed to send Slack alert:', err.message));
-              }
+            // Business: Slack
+            if (alertPlan === 'business' && alertUser.slack_webhook_url) {
+              sendSlackAlert({ webhookUrl: alertUser.slack_webhook_url, ...alertArgs })
+                .catch(err => console.error('[mailer] Failed to send Slack alert:', err.message));
             }
           }
         }
 
-        // Update last_price
+        // Detect stock status change and send alert
+        if (stockStatus !== null && entry.last_stock_status !== null && stockStatus !== entry.last_stock_status) {
+          console.log(
+            `[alert] Stock changed for "${entry.label || entry.url}": ` +
+            `${entry.last_stock_status} → ${stockStatus}`
+          );
+
+          if (alertUser?.email) {
+            const stockArgs = {
+              label: entry.label,
+              url: entry.url,
+              oldStatus: entry.last_stock_status,
+              newStatus: stockStatus,
+            };
+
+            // All plans: email
+            sendStockAlert({ to: alertUser.email, ...stockArgs })
+              .catch(err => console.error('[mailer] Failed to send stock email alert:', err.message));
+
+            // Pro+: SMS
+            if ((alertPlan === 'pro' || alertPlan === 'business') && alertUser.phone_number) {
+              sendSmsStockAlert({ to: alertUser.phone_number, ...stockArgs })
+                .catch(err => console.error('[mailer] Failed to send stock SMS alert:', err.message));
+            }
+
+            // Business: Slack
+            if (alertPlan === 'business' && alertUser.slack_webhook_url) {
+              sendSlackStockAlert({ webhookUrl: alertUser.slack_webhook_url, ...stockArgs })
+                .catch(err => console.error('[mailer] Failed to send stock Slack alert:', err.message));
+            }
+          }
+        }
+
+        // Update last_price and last_stock_status
         db.prepare(
-          'UPDATE watched_urls SET last_price = ?, last_checked_at = datetime(\'now\') WHERE id = ?'
-        ).run(price, entry.id);
+          `UPDATE watched_urls SET
+            last_price = COALESCE(?, last_price),
+            last_stock_status = COALESCE(?, last_stock_status),
+            last_checked_at = datetime('now')
+          WHERE id = ?`
+        ).run(price, stockStatus, entry.id);
       } catch (err) {
         console.error(`[scheduler] Error scraping ${entry.url}:`, err.message);
       }
