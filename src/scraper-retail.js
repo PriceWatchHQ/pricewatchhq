@@ -286,6 +286,13 @@ export async function scrapePriceAndStockRetail(url) {
   const retailerStockTextSelectors = retailer?.stockTextSelectors || [];
   const waitForSelector = retailer?.waitFor || '[itemprop="price"], .price';
 
+  // Walmart: try ScraperAPI structured endpoint first (handles Akamai bot detection)
+  if (retailerName === 'walmart' && SCRAPERAPI_KEY) {
+    const scraperResult = await scrapeWalmartViaScraperAPI(url);
+    if (scraperResult && scraperResult.price !== null) return scraperResult;
+    console.log('[scraper-retail] ScraperAPI Walmart returned no price, falling back to browser');
+  }
+
   const launchOptions = buildLaunchOptions();
 
   let lastError = null;
@@ -371,4 +378,75 @@ export async function scrapePriceAndStockRetail(url) {
  */
 export function isRetailUrl(url) {
   return detectRetailer(url) !== null;
+}
+
+// ---------------------------------------------------------------------------
+// ScraperAPI - Walmart structured data endpoint
+// ---------------------------------------------------------------------------
+
+const SCRAPERAPI_KEY = process.env.SCRAPERAPI_KEY || null;
+
+/**
+ * Extract Walmart product ID from a walmart.com product URL.
+ * Walmart URLs follow: /ip/product-name/PRODUCT_ID
+ * Returns the numeric product ID or null.
+ */
+function extractWalmartProductId(url) {
+  const match = url.match(/\/ip\/(?:[^/]+\/)?(\d+)/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Scrape a Walmart product using ScraperAPI's structured Walmart endpoint.
+ * Returns { price, stockStatus, retailer } or null if unavailable.
+ *
+ * Requires SCRAPERAPI_KEY env var. Falls back gracefully if not set.
+ */
+export async function scrapeWalmartViaScraperAPI(url) {
+  if (!SCRAPERAPI_KEY) return null;
+
+  const productId = extractWalmartProductId(url);
+  if (!productId) {
+    console.log(`[scraper-retail] Could not extract Walmart product ID from: ${url}`);
+    return null;
+  }
+
+  const apiUrl = `https://api.scraperapi.com/structured/walmart/product?api_key=${SCRAPERAPI_KEY}&product_id=${productId}&country_code=us`;
+
+  try {
+    console.log(`[scraper-retail] ScraperAPI Walmart lookup for product_id=${productId}`);
+    const res = await fetch(apiUrl, { timeout: 30_000 });
+
+    if (!res.ok) {
+      console.error(`[scraper-retail] ScraperAPI returned ${res.status} for ${productId}`);
+      return null;
+    }
+
+    const data = await res.json();
+
+    // ScraperAPI structured response shape:
+    // data.price (string like "$24.99" or number), data.in_stock (bool)
+    let price = null;
+    const rawPrice = data?.price ?? data?.sale_price ?? data?.current_price;
+    if (rawPrice != null) {
+      const cleaned = String(rawPrice).replace(/[^0-9.]/g, '');
+      const num = parseFloat(cleaned);
+      if (Number.isFinite(num) && num > 0 && num <= 100000) price = num;
+    }
+
+    let stockStatus = null;
+    if (data?.in_stock === true) stockStatus = 'in_stock';
+    else if (data?.in_stock === false) stockStatus = 'out_of_stock';
+    else if (data?.availability) {
+      const avail = String(data.availability).toLowerCase();
+      if (avail.includes('in_stock') || avail.includes('instock')) stockStatus = 'in_stock';
+      else if (avail.includes('out')) stockStatus = 'out_of_stock';
+    }
+
+    console.log(`[scraper-retail] ScraperAPI Walmart result: price=${price}, stock=${stockStatus}`);
+    return { price, stockStatus, retailer: 'walmart' };
+  } catch (err) {
+    console.error(`[scraper-retail] ScraperAPI Walmart error:`, err.message);
+    return null;
+  }
 }
