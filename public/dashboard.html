@@ -752,7 +752,7 @@
               <th>Stock</th>
               <th>Last Checked</th>
               <th>Change</th>
-              <th>Updated Price</th>
+              <th>Previous Price</th>
               <th></th>
             </tr>
           </thead>
@@ -938,17 +938,15 @@
 
       // Updated price: show current price with diff from previous
       let updatedPriceCell = '—';
-      if (u.last_price != null) {
+      if (u.prev_price != null && u.change !== 'same') {
         const current = Number(u.last_price);
-        if (u.prev_price != null && u.change !== 'same') {
-          const prev = Number(u.prev_price);
-          const diff = current - prev;
-          const diffStr = (diff >= 0 ? '+' : '') + '$' + Math.abs(diff).toFixed(2);
-          const diffColor = diff < 0 ? 'var(--green)' : 'var(--red)';
-          updatedPriceCell = `<strong>$${current.toFixed(2)}</strong> <span style="color:${diffColor};font-size:0.8rem">(${diffStr})</span>`;
-        } else {
-          updatedPriceCell = `<strong>$${current.toFixed(2)}</strong>`;
-        }
+        const prev = Number(u.prev_price);
+        const diff = current - prev;
+        const arrow = diff < 0 ? '↓' : '↑';
+        const diffColor = diff < 0 ? 'var(--green)' : 'var(--red)';
+        updatedPriceCell = `<span style="color:var(--text-muted);text-decoration:line-through;font-size:0.85rem">$${prev.toFixed(2)}</span> <span style="color:${diffColor};font-size:0.85rem">${arrow} $${Math.abs(diff).toFixed(2)}</span>`;
+      } else if (u.prev_price != null) {
+        updatedPriceCell = `<span style="color:var(--text-muted);font-size:0.85rem">$${Number(u.prev_price).toFixed(2)}</span>`;
       }
 
       return `<tr data-id="${u.id}" class="${isSelected ? 'selected' : ''}">
