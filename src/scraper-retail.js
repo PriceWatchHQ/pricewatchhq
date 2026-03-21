@@ -1,0 +1,367 @@
+// Patchright patches the TLS/JA3 fingerprint to match real Chrome,
+// bypassing Akamai/PerimeterX bot detection that blocks playwright-extra.
+import { chromium } from 'patchright';
+
+const PROXY_URL = process.env.PROXY_URL || null;
+const MAX_RETRIES = 3;
+const NAV_TIMEOUT = 45_000;
+const BLOCKED_ELEMENT_THRESHOLD = 100;
+
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
+];
+
+// ---------------------------------------------------------------------------
+// Retailer detection
+// ---------------------------------------------------------------------------
+
+const RETAILERS = {
+  walmart: {
+    match: (url) => /walmart\.com/i.test(url),
+    waitFor: '[itemprop="price"], [data-testid="price-wrap"], .price-group',
+    priceSelectors: [
+      { selector: '[itemprop="price"]', attr: 'content' },
+      { selector: '[data-testid="price-wrap"] [itemprop="price"]', attr: 'content' },
+      { selector: '[class*="price-characteristic"]', attr: null },
+      { selector: '[data-testid="price-wrap"]', attr: null },
+      { selector: '[class*="Price__StyledPriceDisplay"]', attr: null },
+      { selector: '.price-group', attr: null },
+    ],
+    stockSelectors: [
+      '[data-testid="add-to-cart-btn"]',
+      '[data-testid*="fulfillment"]',
+      'button[data-testid="add-to-cart-button"]',
+    ],
+    stockTextSelectors: [
+      '[data-testid*="fulfillment"]',
+      '[class*="fulfillment"]',
+    ],
+  },
+  bestbuy: {
+    match: (url) => /bestbuy\.com/i.test(url),
+    waitFor: '.priceView-customer-price span, [data-testid="customer-price"]',
+    priceSelectors: [
+      { selector: '.priceView-customer-price span', attr: null },
+      { selector: '[data-testid="customer-price"] span', attr: null },
+      { selector: '.priceView-hero-price span', attr: null },
+      { selector: '[class*="pricing-price"] span', attr: null },
+      { selector: '[itemprop="price"]', attr: 'content' },
+    ],
+    stockSelectors: [
+      'button.add-to-cart-button',
+      '[data-button-state="ADD_TO_CART"]',
+      'button[data-sku-id]',
+    ],
+    stockTextSelectors: [
+      '.fulfillment-add-to-cart-button',
+      '[class*="fulfillment"]',
+      '[data-testid*="fulfillment"]',
+    ],
+  },
+  target: {
+    match: (url) => /target\.com/i.test(url),
+    waitFor: '[data-test*="Price"], [data-test="product-price"], [class*="CurrentPrice"]',
+    priceSelectors: [
+      // Real Target selectors (observed from live pages)
+      { selector: '[data-test="@web/Price/PriceFull--currentPrice"] span', attr: null },
+      { selector: '[data-test="@web/Price/PriceFull--currentPrice"]', attr: null },
+      { selector: '[data-test*="currentPrice"]', attr: null },
+      { selector: '[data-test*="Price/Price--"]', attr: null },
+      { selector: '[data-test="product-price"] span', attr: null },
+      { selector: '[data-test="product-price"]', attr: null },
+      { selector: '[class*="CurrentPrice"]', attr: null },
+      { selector: '[itemprop="price"]', attr: 'content' },
+    ],
+    stockSelectors: [
+      '[data-test="shipItButton"]',
+      '[data-test="addToCartButton"]',
+      'button[data-test="orderPickupButton"]',
+      '[data-test="shipItButton"]:not([disabled])',
+    ],
+    stockTextSelectors: [
+      '[data-test="storeAvailability"]',
+      '[data-test*="fulfillment"]',
+      '[class*="Fulfillment"]',
+    ],
+  },
+};
+
+// Generic fallback (same selectors as scraper-playwright.js)
+const GENERIC_PRICE_SELECTORS = [
+  { selector: '[itemprop="price"]', attr: 'content' },
+  { selector: '.price', attr: null },
+  { selector: '[class*="price"]', attr: null },
+  { selector: '[data-price]', attr: 'data-price' },
+  { selector: '[class*="Price"]', attr: null },
+  { selector: 'span[class*="amount"]', attr: null },
+  { selector: '[data-testid*="price"]', attr: null },
+];
+
+const GENERIC_STOCK_SELECTORS = [
+  '#availability',
+  '[class*="avail"]',
+  '[class*="stock"]',
+  '[id*="stock"]',
+  '[data-availability]',
+  '[data-testid*="fulfillment"]',
+  '[class*="fulfillment"]',
+];
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function detectRetailer(url) {
+  for (const [name, config] of Object.entries(RETAILERS)) {
+    if (config.match(url)) return { name, ...config };
+  }
+  return null;
+}
+
+function randomUserAgent() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
+function buildLaunchOptions() {
+  const opts = { headless: true };
+  if (PROXY_URL) {
+    const proxyUrl = new URL(PROXY_URL);
+    opts.proxy = {
+      server: `${proxyUrl.protocol}//${proxyUrl.hostname}:${proxyUrl.port}`,
+      username: proxyUrl.username || undefined,
+      password: proxyUrl.password || undefined,
+    };
+  }
+  return opts;
+}
+
+/**
+ * Check if the page is blocked by counting DOM elements.
+ * Blocked/captcha pages typically have very few elements.
+ */
+async function isPageBlocked(page) {
+  const elementCount = await page.evaluate(() => document.querySelectorAll('*').length);
+  if (elementCount <= BLOCKED_ELEMENT_THRESHOLD) return true;
+
+  // Also check for common captcha/block indicators in text and title
+  const blocked = await page.evaluate(() => {
+    const text = document.body?.innerText?.toLowerCase() || '';
+    const title = document.title?.toLowerCase() || '';
+    return (
+      text.includes('robot or human') ||
+      text.includes('are you a robot') ||
+      text.includes('captcha') ||
+      text.includes('access denied') ||
+      text.includes('verify you are human') ||
+      title.includes('robot') ||
+      title.includes('captcha') ||
+      title.includes('access denied') ||
+      title.includes('just a moment')
+    );
+  });
+  return blocked;
+}
+
+// ---------------------------------------------------------------------------
+// In-page extraction (runs inside page.evaluate)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the extraction function that runs inside the browser context.
+ * Accepts retailer-specific and generic selectors so fallback works in one pass.
+ */
+function buildExtractFn() {
+  return ({ retailerPriceSelectors, retailerStockSelectors, retailerStockTextSelectors,
+            genericPriceSelectors, genericStockSelectors }) => {
+
+    function parsePrice(raw) {
+      if (!raw) return null;
+      const cleaned = raw.replace(/[^0-9.,]/g, '').replace(/,/g, '');
+      const num = parseFloat(cleaned);
+      if (!Number.isFinite(num) || num <= 0 || num > 100000) return null;
+      return num;
+    }
+
+    function tryPriceSelectors(selectors) {
+      for (const { selector, attr } of selectors) {
+        const el = document.querySelector(selector);
+        if (!el) continue;
+        // If an attribute is specified, try it first
+        if (attr) {
+          const val = el.getAttribute(attr);
+          const price = parsePrice(val);
+          if (price !== null) return price;
+        }
+        // Fall back to textContent
+        const price = parsePrice(el.textContent);
+        if (price !== null) return price;
+      }
+      return null;
+    }
+
+    function tryStockFromButtons(selectors) {
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el && !el.disabled) return 'in_stock';
+      }
+      return null;
+    }
+
+    function tryStockFromText(selectors) {
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (!el) continue;
+        const text = (el.getAttribute('data-availability') || el.textContent)
+          .toLowerCase().trim();
+        if (!text) continue;
+        if (/out of stock|sold out|unavailable|currently unavailable|not available/.test(text))
+          return 'out_of_stock';
+        if (/in stock|in-stock|available|add to cart|ships from|delivery|shipping/.test(text))
+          return 'in_stock';
+      }
+      return null;
+    }
+
+    function tryStockFromCartButtons() {
+      const buttons = document.querySelectorAll('button, input[type="submit"], [role="button"]');
+      for (const btn of buttons) {
+        const t = btn.textContent.toLowerCase();
+        if (t.includes('add to cart') || t.includes('add to basket') || t.includes('buy now'))
+          return 'in_stock';
+      }
+      return null;
+    }
+
+    function trySchemaAvailability() {
+      const el = document.querySelector('[itemprop="availability"]');
+      if (!el) return null;
+      const val = (el.getAttribute('href') || el.getAttribute('content') || el.textContent).toLowerCase();
+      if (val.includes('instock') || val.includes('in_stock')) return 'in_stock';
+      if (val.includes('outofstock') || val.includes('out_of_stock')) return 'out_of_stock';
+      return null;
+    }
+
+    // --- Price: retailer-specific first, then generic ---
+    let price = tryPriceSelectors(retailerPriceSelectors);
+    if (price === null) {
+      price = tryPriceSelectors(genericPriceSelectors);
+    }
+
+    // --- Stock: schema.org → retailer buttons → retailer text → generic text → generic cart buttons ---
+    let stockStatus = trySchemaAvailability();
+    if (!stockStatus) stockStatus = tryStockFromButtons(retailerStockSelectors);
+    if (!stockStatus) stockStatus = tryStockFromText(retailerStockTextSelectors);
+    if (!stockStatus) stockStatus = tryStockFromText(genericStockSelectors);
+    if (!stockStatus) stockStatus = tryStockFromCartButtons();
+
+    return { price, stockStatus };
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Main scraper
+// ---------------------------------------------------------------------------
+
+/**
+ * Scrape price and stock for Walmart, Best Buy, or Target using Playwright
+ * stealth with Menards-style retry/block detection.
+ *
+ * On each blocked attempt, the browser is fully restarted to get a new proxy IP
+ * (residential proxies like DataImpulse rotate IP per connection).
+ *
+ * Falls back to generic selectors if retailer-specific ones don't match.
+ *
+ * @param {string} url - Product URL
+ * @returns {Promise<{price: number|null, stockStatus: string|null, retailer: string}>}
+ */
+export async function scrapePriceAndStockRetail(url) {
+  const retailer = detectRetailer(url);
+  const retailerName = retailer?.name || 'generic';
+
+  const retailerPriceSelectors = retailer?.priceSelectors || [];
+  const retailerStockSelectors = retailer?.stockSelectors || [];
+  const retailerStockTextSelectors = retailer?.stockTextSelectors || [];
+  const waitForSelector = retailer?.waitFor || '[itemprop="price"], .price';
+
+  const launchOptions = buildLaunchOptions();
+
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    let browser = null;
+    try {
+      console.log(`[scraper-retail] Attempt ${attempt}/${MAX_RETRIES} for ${retailerName}: ${url}`);
+      browser = await chromium.launch(launchOptions);
+
+      const context = await browser.newContext({
+        userAgent: randomUserAgent(),
+        viewport: { width: 1920, height: 1080 },
+        locale: 'en-US',
+      });
+
+      const page = await context.newPage();
+
+      // Navigate — use domcontentloaded since networkidle can hang on tracker-heavy sites
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
+
+      // Allow JS to hydrate after initial load
+      await page.waitForTimeout(4000);
+
+      // Try to wait for a price selector to appear (soft — don't fail if it times out)
+      try {
+        await page.waitForSelector(waitForSelector, { timeout: 8_000 });
+      } catch {
+        // Selector didn't appear — might be blocked or page structure changed
+      }
+
+      // Block detection: restart browser to rotate proxy IP
+      if (await isPageBlocked(page)) {
+        console.log(`[scraper-retail] Blocked on attempt ${attempt}/${MAX_RETRIES}, restarting browser for new proxy IP`);
+        await browser.close();
+        browser = null;
+        continue;
+      }
+
+      // Extract price and stock
+      const result = await page.evaluate(buildExtractFn(), {
+        retailerPriceSelectors,
+        retailerStockSelectors,
+        retailerStockTextSelectors,
+        genericPriceSelectors: GENERIC_PRICE_SELECTORS,
+        genericStockSelectors: GENERIC_STOCK_SELECTORS,
+      });
+
+      console.log(
+        `[scraper-retail] ${retailerName} result: price=${result.price}, stock=${result.stockStatus}`
+      );
+
+      return { ...result, retailer: retailerName };
+    } catch (err) {
+      lastError = err;
+      console.error(
+        `[scraper-retail] Attempt ${attempt}/${MAX_RETRIES} failed for ${url}:`,
+        err.message
+      );
+    } finally {
+      if (browser) {
+        await browser.close();
+      }
+    }
+  }
+
+  console.error(
+    `[scraper-retail] All ${MAX_RETRIES} attempts failed for ${url}:`,
+    lastError?.message
+  );
+  return { price: null, stockStatus: null, retailer: retailerName };
+}
+
+/**
+ * Check if a URL is a supported retail site (Walmart, Best Buy, Target).
+ */
+export function isRetailUrl(url) {
+  return detectRetailer(url) !== null;
+}

@@ -3,6 +3,7 @@ import fetch from 'node-fetch';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { scrapePriceAndStockHeadless } from './scraper-headless.js';
 import { scrapePriceAndStockPlaywright } from './scraper-playwright.js';
+import { scrapePriceAndStockRetail, isRetailUrl } from './scraper-retail.js';
 
 // DataImpulse residential proxy
 const PROXY_URL = process.env.PROXY_URL || null;
@@ -145,7 +146,7 @@ export async function scrapePriceAndStock(url) {
 /**
  * Try the fast HTTP scraper first; if price is null, fall back to headless browser.
  * When usePlaywright is true, adds a Playwright stealth tier between HTTP and Puppeteer.
- * Fallback chain: HTTP → Playwright (if enabled) → Puppeteer headless.
+ * Fallback chain: HTTP → Retail stealth (if retail URL) → Playwright generic → Puppeteer headless.
  * Returns { price, stockStatus }.
  */
 export async function scrapePriceAndStockWithFallback(url, usePlaywright = false) {
@@ -156,9 +157,26 @@ export async function scrapePriceAndStockWithFallback(url, usePlaywright = false
     return httpResult;
   }
 
-  // Playwright stealth fallback (pro/business plans)
+  // Retail-specific stealth scraper (Walmart, Best Buy, Target)
+  if (usePlaywright && isRetailUrl(url)) {
+    console.log(`[scraper] HTTP scraper returned no price for ${url}, trying retail stealth scraper...`);
+    try {
+      const retailResult = await scrapePriceAndStockRetail(url);
+      console.log(`[scraper] Retail scraper result for ${url}: price=${retailResult.price}, stock=${retailResult.stockStatus}`);
+      if (retailResult.price !== null) {
+        return {
+          price: retailResult.price,
+          stockStatus: retailResult.stockStatus ?? httpResult.stockStatus,
+        };
+      }
+    } catch (err) {
+      console.error(`[scraper] Retail stealth scraper failed for ${url}:`, err.message);
+    }
+  }
+
+  // Generic Playwright stealth fallback (pro/business plans, non-retail or retail fallback)
   if (usePlaywright) {
-    console.log(`[scraper] HTTP scraper returned no price for ${url}, trying Playwright stealth...`);
+    console.log(`[scraper] Trying generic Playwright stealth for ${url}...`);
     try {
       const pwResult = await scrapePriceAndStockPlaywright(url);
       console.log(`[scraper] Playwright result for ${url}: price=${pwResult.price}, stock=${pwResult.stockStatus}`);
