@@ -1,5 +1,6 @@
 import { load } from 'cheerio';
 import fetch from 'node-fetch';
+import { scrapePriceAndStockHeadless } from './scraper-headless.js';
 
 const PRICE_SELECTORS = [
   '.price',
@@ -131,6 +132,32 @@ export async function scrapePriceAndStock(url) {
   const stockStatus = await scrapeStockStatus(url, html);
 
   return { price, stockStatus };
+}
+
+/**
+ * Try the fast HTTP scraper first; if price is null, fall back to headless browser.
+ * Returns { price, stockStatus }.
+ */
+export async function scrapePriceAndStockWithFallback(url) {
+  const httpResult = await scrapePriceAndStock(url);
+
+  if (httpResult.price !== null) {
+    console.log(`[scraper] HTTP scraper succeeded for ${url}`);
+    return httpResult;
+  }
+
+  console.log(`[scraper] HTTP scraper returned no price for ${url}, trying headless browser...`);
+  try {
+    const headlessResult = await scrapePriceAndStockHeadless(url);
+    console.log(`[scraper] Headless scraper result for ${url}: price=${headlessResult.price}, stock=${headlessResult.stockStatus}`);
+    return {
+      price: headlessResult.price,
+      stockStatus: headlessResult.stockStatus ?? httpResult.stockStatus,
+    };
+  } catch (err) {
+    console.error(`[scraper] Headless scraper failed for ${url}:`, err.message);
+    return httpResult;
+  }
 }
 
 /**

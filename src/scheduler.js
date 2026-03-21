@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import db from './db.js';
-import { scrapePrice, scrapePriceAndStock } from './scraper.js';
+import { scrapePrice, scrapePriceAndStock, scrapePriceAndStockWithFallback } from './scraper.js';
 import { runPoster } from './poster.js';
 import { runEngager } from './engager.js';
 import { sendPriceAlert, sendSlackAlert, sendSmsAlert, sendStockAlert, sendSlackStockAlert, sendSmsStockAlert } from './mailer.js';
@@ -36,7 +36,10 @@ export function startScheduler() {
           }
         }
 
-        const { price, stockStatus } = await scrapePriceAndStock(entry.url);
+        const useHeadless = PLAN_LIMITS[plan]?.headlessScraper === true;
+        const { price, stockStatus } = useHeadless
+          ? await scrapePriceAndStockWithFallback(entry.url)
+          : await scrapePriceAndStock(entry.url);
 
         if (price === null && stockStatus === null) {
           console.log(`[scheduler] No price or stock found for ${entry.url}`);
