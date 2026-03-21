@@ -520,17 +520,83 @@ export async function scrapeWalmartViaZenRows(url) {
 }
 
 /**
+ * Scrape Walmart price via search page — no proxy required.
+ * Walmart's /search endpoint works from any IP with Chrome TLS fingerprint.
+ * Extracts price and stock from __NEXT_DATA__ search results by matching item ID.
+ */
+export async function scrapeWalmartViaSearchPage(url) {
+  const match = url.match(/walmart\.com\/ip\/([^\/]+)\/(\d+)/);
+  if (!match) return null;
+  const [, slug, itemId] = match;
+  const searchTerm = slug.replace(/-/g, ' ').slice(0, 60);
+
+  try {
+    console.log(`[scraper-retail] Walmart search for itemId=${itemId}: "${searchTerm.slice(0, 40)}"`);
+
+    const r = await wreqGet(`https://www.walmart.com/search?q=${encodeURIComponent(searchTerm)}`, {
+      browser: 'chrome_131',
+      os: 'windows',
+      headers: { 'accept-language': 'en-US,en;q=0.9' },
+    });
+
+    if (!r.ok) return null;
+    const html = await r.text();
+
+    if (html.includes('Robot or human') || html.length < 50000) return null;
+
+    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+    if (!nextDataMatch) return null;
+
+    const data = JSON.parse(nextDataMatch[1]);
+    const items = data?.props?.pageProps?.initialData?.searchResult?.itemStacks?.[0]?.items || [];
+    if (!items.length) return null;
+
+    // Prefer exact item ID match, fall back to first result
+    const item = items.find(it => it.usItemId === itemId) || items[0];
+    if (!item) return null;
+
+    // Extract price
+    const priceStr = item.priceInfo?.linePriceDisplay || item.priceInfo?.itemPrice;
+    let price = null;
+    if (priceStr) {
+      const num = parseFloat(priceStr.replace(/[^0-9.]/g, ''));
+      if (Number.isFinite(num) && num > 0 && num <= 100000) price = num;
+    } else if (item.price && Number.isFinite(item.price)) {
+      price = item.price;
+    }
+
+    // Extract stock
+    const stockText = (item.availabilityStatusDisplayValue || '').toLowerCase();
+    const stockStatus = stockText.includes('in stock') ? 'in_stock'
+      : stockText.includes('out') ? 'out_of_stock'
+      : null;
+
+    const matchType = item.usItemId === itemId ? 'exact' : 'first-result';
+    console.log(`[scraper-retail] Walmart search result: price=${price}, stock=${stockStatus} (${matchType})`);
+
+    return price !== null ? { price, stockStatus, retailer: 'walmart' } : null;
+  } catch (err) {
+    console.error('[scraper-retail] Walmart search error:', err.message?.slice(0, 80));
+    return null;
+  }
+}
+
+/**
  * Scrape Walmart using wreq-js (Rust-native Chrome TLS/H2 fingerprint) + DataImpulse proxy.
  * Walmart embeds full product data in __NEXT_DATA__ — no browser needed if TLS passes.
  */
 export async function scrapeWalmartViaWreq(url) {
-  if (!PROXY_URL) return null;
+  // Strategy 1 (preferred, no proxy): Search-based extraction from Walmart search page.
+  // Walmart search works from any IP via wreq-js Chrome fingerprint.
+  const searchResult = await scrapeWalmartViaSearchPage(url);
+  if (searchResult) return searchResult;
 
+  // Strategy 2 (fallback): Direct product page via US residential proxy.
+  if (!PROXY_URL) return null;
   const productId = extractWalmartProductId(url);
   if (!productId) return null;
 
   // Walmart captchas non-US IPs. Confirm we have a US IP before attempting.
-  // DataImpulse gives ~1 US IP per 5-10 requests, so 25 attempts ~= 2-5 US IPs available.
   const hasUSIP = await confirmUSProxyAvailable(25);
   if (!hasUSIP) {
     console.log('[scraper-retail] wreq-js Walmart: no US IP available, skipping');
@@ -538,7 +604,7 @@ export async function scrapeWalmartViaWreq(url) {
   }
 
   try {
-    console.log(`[scraper-retail] wreq-js Walmart lookup for product_id=${productId}`);
+    console.log(`[scraper-retail] wreq-js Walmart direct product lookup for product_id=${productId}`);
 
     const res = await wreqGet(url, {
       browser: 'chrome_131',
