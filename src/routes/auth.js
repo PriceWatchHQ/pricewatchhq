@@ -30,6 +30,9 @@ export default async function authRoutes(app) {
 
     const loginUrl = `https://pricewatchhq-production.up.railway.app/api/auth/verify?token=${token}`;
 
+    // Log magic link for debugging (Railway logs)
+    console.log(`[auth] Magic link for ${email}: ${loginUrl}`);
+
     // Send magic link email
     sendMagicLinkEmail({ to: email, loginUrl }).catch(err =>
       console.error('[auth] Failed to send magic link email:', err.message)
