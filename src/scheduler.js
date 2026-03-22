@@ -109,8 +109,8 @@ async function processUrl({ entry, plan, useHeadless, usePlaywright }) {
         if (price === null && stockStatus === null) {
           const newFailCount = (entry.fail_count || 0) + 1;
           console.log(`[scheduler] No price or stock found for ${entry.url} (fail ${newFailCount}/3)`);
-          // After 3 consecutive failures, mark as unavailable
-          if (newFailCount >= 3) {
+          // After 5 consecutive failures, mark as unavailable
+          if (newFailCount >= 5) {
             db.prepare(
               `UPDATE watched_urls SET fail_count = ?, url_status = 'unavailable', last_checked_at = datetime('now') WHERE id = ?`
             ).run(newFailCount, entry.id);
