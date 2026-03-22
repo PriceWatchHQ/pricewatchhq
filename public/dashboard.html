@@ -417,6 +417,7 @@
     .stock-out { background: rgba(248, 113, 113, 0.12); color: var(--red); }
     .stock-unknown { background: rgba(148, 163, 184, 0.1); color: var(--text-muted); }
     .stock-unavailable { background: rgba(245, 158, 11, 0.12); color: #F59E0B; }
+    .stock-third { background: rgba(251, 146, 60, 0.12); color: #FB923C; }
     .btn-delete {
       background: transparent;
       border: 1px solid var(--border);
@@ -934,6 +935,7 @@
       const stockBadge = u.url_status === 'unavailable'
         ? '<span class="stock-badge stock-unavailable">⚠ Unavailable</span>'
         : stockIndicator(u.last_stock_status);
+
       const isSelected = u.id === selectedUrlId;
 
       // Updated price: show current price with diff from previous
@@ -979,6 +981,7 @@
   function stockIndicator(status) {
     if (status === 'in_stock') return '<span class="stock-badge stock-in">● In Stock</span>';
     if (status === 'out_of_stock') return '<span class="stock-badge stock-out">● Out of Stock</span>';
+    if (status === 'third_party') return '<span class="stock-badge stock-third">● 3rd Party</span>';
     return '<span class="stock-badge stock-unknown">— Unknown</span>';
   }
 

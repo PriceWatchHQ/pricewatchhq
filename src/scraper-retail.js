@@ -315,8 +315,22 @@ function buildExtractFn() {
     if (!stockStatus) stockStatus = tryStockFromText(genericStockSelectors);
     if (!stockStatus) stockStatus = tryStockFromCartButtons();
 
-    // Amazon-specific: main buy box OOS = mark as out_of_stock for price accuracy
-    // (3rd party seller prices are unreliable / inflated)
+    // Amazon-specific: if main buy box is OOS but 3rd party sellers exist, mark as third_party
+    const isAmazon = typeof window !== 'undefined' && window.location.hostname.includes('amazon.com');
+    if (isAmazon && stockStatus === 'out_of_stock') {
+      const otherSellers = document.querySelector(
+        '#olp_feature_div, #moreBuyingChoices_feature_div, #buybox-see-all-buying-choices, #new-buybox'
+      );
+      if (otherSellers && otherSellers.textContent.trim().length > 0) {
+        stockStatus = 'third_party';
+        // Grab 3rd party price
+        const otherPrice = document.querySelector('#olp_feature_div .a-color-price, #moreBuyingChoices_feature_div .a-color-price');
+        if (otherPrice && price === null) {
+          const p = parseFloat(otherPrice.textContent.replace(/[^0-9.]/g, ''));
+          if (Number.isFinite(p) && p > 0) price = p;
+        }
+      }
+    }
 
     return { price, stockStatus };
   };
