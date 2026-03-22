@@ -16,6 +16,7 @@ import billingRoutes from './routes/billing.js';
 import apiKeyRoutes from './routes/api-keys.js';
 import publicApiRoutes from './routes/public-api.js';
 import { startScheduler } from './scheduler.js';
+import { scrapePriceAndStockRetail } from './scraper-retail.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -213,10 +214,50 @@ app.get('/admin/force-scrape', async (req, reply) => {
   });
 });
 
+// Seed demo account prices on startup if many are null (fires in background)
+async function seedDemoPricesIfNeeded() {
+  try {
+    const db = getDb();
+    const demo = db.prepare("SELECT id FROM users WHERE email='demo@pricewatchhq.com'").get();
+    if (!demo) return;
+    const nullItems = db.prepare(
+      "SELECT * FROM watched_urls WHERE user_id=? AND last_price IS NULL AND url_status='active' LIMIT 25"
+    ).all(demo.id);
+    if (nullItems.length <= 3) {
+      console.log(`[seed] Demo has ${nullItems.length} null-price items — no seed needed`);
+      return;
+    }
+    console.log(`[seed] Demo has ${nullItems.length} null-price items — seeding...`);
+    for (const item of nullItems) {
+      try {
+        const result = await scrapePriceAndStockRetail(item.url);
+        if (result && result.price) {
+          db.prepare(
+            "UPDATE watched_urls SET last_price=?, last_stock_status=?, last_checked_at=datetime('now'), fail_count=0 WHERE id=?"
+          ).run(result.price, result.stockStatus, item.id);
+          db.prepare(
+            "INSERT INTO price_history (watched_url_id, price, recorded_at) VALUES (?,?,datetime('now'))"
+          ).run(item.id, result.price);
+          console.log(`[seed] ✓ ${item.label}: $${result.price}`);
+        } else {
+          console.log(`[seed] ✗ ${item.label}: no price`);
+        }
+        await new Promise(r => setTimeout(r, 1500));
+      } catch (err) {
+        console.log(`[seed] ✗ ${item.label}: ${err.message}`);
+      }
+    }
+    console.log('[seed] Demo seed complete.');
+  } catch (err) {
+    console.error('[seed] Fatal:', err.message);
+  }
+}
+
 // Start server
 try {
   await app.listen({ port: PORT, host: '0.0.0.0' });
   startScheduler();
+  seedDemoPricesIfNeeded().catch(err => console.error('[seed] Uncaught:', err.message));
   console.log(`PriceWatch HQ running on http://localhost:${PORT}`);
 } catch (err) {
   app.log.error(err);
