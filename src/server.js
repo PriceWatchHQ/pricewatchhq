@@ -188,6 +188,18 @@ app.post('/admin/bulk-urls', async (req, reply) => {
   return { success: true, added: count };
 });
 
+// Temp admin: demo account status check
+app.get('/admin/demo-status', async (req, reply) => {
+  const { secret } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  const demo = db.prepare("SELECT id, email, plan FROM users WHERE email='demo@pricewatchhq.com'").get();
+  if (!demo) return reply.send({ error: 'Demo account not found' });
+  const urls = db.prepare('SELECT id, label, url, last_price, last_stock_status, last_checked_at, fail_count, url_status FROM watched_urls WHERE user_id=? ORDER BY id').all(demo.id);
+  const nullCount = urls.filter(u => u.last_price === null).length;
+  return reply.send({ demo, urlCount: urls.length, nullPriceCount: nullCount, urls });
+});
+
 // Temp admin: force scrape all URLs for a user
 app.get('/admin/force-scrape', async (req, reply) => {
   const { secret } = req.query;
