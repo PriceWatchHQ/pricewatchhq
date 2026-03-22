@@ -605,28 +605,86 @@ export async function scrapeWalmartViaSearchPage(url) {
     const items = data?.props?.pageProps?.initialData?.searchResult?.itemStacks?.[0]?.items || [];
     if (!items.length) return null;
 
-    // Only use exact item ID match — never fall back to first result (wrong product prices)
-    const item = items.find(it => it.usItemId === itemId);
-    if (!item) return null;
+    // Filter out ad/sponsored placeholders and items without IDs
+    const realItems = items.filter(it => it.usItemId && it.usItemId.length > 0);
+    if (!realItems.length) return null;
 
-    // Extract price
-    const priceStr = item.priceInfo?.linePriceDisplay || item.priceInfo?.itemPrice;
+    // Priority 1: Exact item ID match
+    let item = realItems.find(it => it.usItemId === itemId);
+    let matchType = 'exact';
+
+    // Priority 2: Match by canonical URL containing the item ID
+    if (!item) {
+      item = realItems.find(it => it.canonicalUrl?.includes(`/${itemId}`));
+      matchType = 'canonical-url';
+    }
+
+    // Priority 3: Match by product name similarity
+    // Walmart often has multiple listings for the same product with different IDs.
+    // Use the slug from the URL to find the best match.
+    // Prefer new-condition items; fall back to refurbished if no new items match.
+    if (!item) {
+      const slugWords = slug.toLowerCase().split('-').filter(w => w.length > 2);
+
+      function scoreItems(candidates) {
+        return candidates
+          .map(it => {
+            const name = (it.name || '').toLowerCase();
+            const nameWords = name.split(/[\s,\-\/]+/).filter(w => w.length > 2);
+            const matches = slugWords.filter(w => nameWords.some(nw => nw.includes(w) || w.includes(nw))).length;
+            return { item: it, score: matches / Math.max(slugWords.length, 1) };
+          })
+          .filter(s => s.score >= 0.5)
+          .sort((a, b) => b.score - a.score);
+      }
+
+      // Try new-condition items first
+      const newItems = realItems.filter(it => {
+        const name = (it.name || '').toLowerCase();
+        return !name.includes('refurbish') && !name.includes('pre-owned') && !name.includes('restored');
+      });
+      let scored = scoreItems(newItems);
+
+      // Fall back to refurbished/restored if no new items match
+      if (scored.length === 0) {
+        scored = scoreItems(realItems);
+      }
+
+      if (scored.length > 0) {
+        item = scored[0].item;
+        matchType = `name-match(${Math.round(scored[0].score * 100)}%)`;
+      }
+    }
+
+    if (!item) {
+      console.log(`[scraper-retail] Walmart search: no match for itemId=${itemId} among ${realItems.length} results`);
+      return null;
+    }
+
+    // Extract price — try priceInfo fields first, then numeric price field
     let price = null;
-    if (priceStr) {
+    const priceStr = item.priceInfo?.linePriceDisplay || item.priceInfo?.linePrice;
+    if (priceStr && priceStr.length > 0) {
       const num = parseFloat(priceStr.replace(/[^0-9.]/g, ''));
       if (Number.isFinite(num) && num > 0 && num <= 100000) price = num;
-    } else if (item.price && Number.isFinite(item.price)) {
+    }
+    if (price === null && item.priceInfo?.minPrice != null) {
+      const num = parseFloat(item.priceInfo.minPrice);
+      if (Number.isFinite(num) && num > 0 && num <= 100000) price = num;
+    }
+    if (price === null && typeof item.price === 'number' && Number.isFinite(item.price) && item.price > 0) {
       price = item.price;
     }
 
     // Extract stock
     const stockText = (item.availabilityStatusDisplayValue || '').toLowerCase();
-    const stockStatus = stockText.includes('in stock') ? 'in_stock'
+    const isOOS = item.isOutOfStock === true;
+    const stockStatus = isOOS ? 'out_of_stock'
+      : stockText.includes('in stock') ? 'in_stock'
       : stockText.includes('out') ? 'out_of_stock'
-      : null;
+      : (price !== null ? 'in_stock' : null);
 
-    const matchType = item.usItemId === itemId ? 'exact' : 'first-result';
-    console.log(`[scraper-retail] Walmart search result: price=${price}, stock=${stockStatus} (${matchType})`);
+    console.log(`[scraper-retail] Walmart search result: price=${price}, stock=${stockStatus} (${matchType}, id=${item.usItemId})`);
 
     return price !== null ? { price, stockStatus, retailer: 'walmart' } : null;
   } catch (err) {
