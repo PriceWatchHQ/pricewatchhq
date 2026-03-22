@@ -96,11 +96,11 @@ export async function scrapeStockStatus(url, existingHtml) {
     }
 
     // If main buy box is OOS, check for other sellers (3rd party / marketplace)
-    // Amazon shows "X new from $XX.XX" or "More buying choices" when other sellers have stock
+    // Use as stock signal ONLY — don't use their inflated prices
     if (mainBuyBoxOOS) {
       const otherSellers = $('#olp_feature_div, #moreBuyingChoices_feature_div, #buybox-see-all-buying-choices, #new-buybox').first();
       if (otherSellers.length && otherSellers.text().trim().length > 0) {
-        return 'in_stock'; // Other sellers have stock
+        return 'out_of_stock'; // Main seller OOS — 3rd party only, mark as OOS for price accuracy
       }
       return 'out_of_stock';
     }
