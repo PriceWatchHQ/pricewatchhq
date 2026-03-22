@@ -188,6 +188,157 @@ app.post('/admin/bulk-urls', async (req, reply) => {
   return { success: true, added: count };
 });
 
+
+// Admin: one-shot demo account seeder
+app.get('/admin/seed-demo', async (req, reply) => {
+  const { secret } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  let demo = db.prepare("SELECT * FROM users WHERE email='demo@pricewatchhq.com'").get();
+  if (!demo) {
+    db.prepare("INSERT INTO users (email, plan, created_at) VALUES ('demo@pricewatchhq.com', 'business', datetime('now'))").run();
+    demo = db.prepare("SELECT * FROM users WHERE email='demo@pricewatchhq.com'").get();
+  } else {
+    db.prepare('UPDATE users SET plan=? WHERE id=?').run('business', demo.id);
+  }
+  const existing = db.prepare('SELECT COUNT(*) as c FROM watched_urls WHERE user_id=?').get(demo.id);
+  if (existing.c > 0) {
+    return reply.send({ success: true, message: 'Demo already seeded', urlCount: existing.c, userId: demo.id });
+  }
+  const DEMO_URLS = [
+  {
+    "label": "🍎 AirPods Pro 2nd Gen - Walmart",
+    "url": "https://www.walmart.com/ip/Apple-AirPods-Pro-2nd-Generation/1752657432"
+  },
+  {
+    "label": "🍎 AirPods Pro 2nd Gen - Best Buy",
+    "url": "https://www.bestbuy.com/site/apple-airpods-pro-2nd-generation/6447382.p"
+  },
+  {
+    "label": "🍎 AirPods Pro 2nd Gen - Target",
+    "url": "https://www.target.com/p/apple-airpods-pro-2nd-generation/-/A-85978699"
+  },
+  {
+    "label": "🍎 Apple Watch SE - Walmart",
+    "url": "https://www.walmart.com/ip/Apple-Watch-SE-GPS-40mm/2634687562"
+  },
+  {
+    "label": "🍎 Apple Watch SE - Best Buy",
+    "url": "https://www.bestbuy.com/site/apple-watch-se-2nd-generation-gps-40mm-midnight/6340237.p"
+  },
+  {
+    "label": "🍎 iPad 9th Gen - Walmart",
+    "url": "https://www.walmart.com/ip/Apple-iPad-9th-Generation-64GB/438879904"
+  },
+  {
+    "label": "🍎 iPad 9th Gen - Best Buy",
+    "url": "https://www.bestbuy.com/site/apple-ipad-9th-generation-/4901811.p"
+  },
+  {
+    "label": "🎮 PS5 Console - Walmart",
+    "url": "https://www.walmart.com/ip/PlayStation-5-Console/363472942"
+  },
+  {
+    "label": "🎮 PS5 Console - Best Buy",
+    "url": "https://www.bestbuy.com/site/sony-playstation-5-console/6426149.p"
+  },
+  {
+    "label": "🎮 Nintendo Switch OLED - Walmart",
+    "url": "https://www.walmart.com/ip/Nintendo-Switch-OLED-Model-w-White-Joy-Con/910582148"
+  },
+  {
+    "label": "🎮 Xbox Series S - Best Buy",
+    "url": "https://www.bestbuy.com/site/microsoft-xbox-series-s-512gb/6430277.p"
+  },
+  {
+    "label": "📺 Samsung 65\" 4K TV - Walmart",
+    "url": "https://www.walmart.com/ip/Samsung-65-Class-4K-UHD-LED-Smart-TV/114879791"
+  },
+  {
+    "label": "📺 Samsung 65\" 4K - Best Buy",
+    "url": "https://www.bestbuy.com/site/samsung-65-class-u7900-series/6639210.p"
+  },
+  {
+    "label": "📺 LG 55\" 4K TV - Walmart",
+    "url": "https://www.walmart.com/ip/LG-55-Class-4K-UHD-Smart-TV/443426991"
+  },
+  {
+    "label": "📺 LG 55\" OLED - Best Buy",
+    "url": "https://www.bestbuy.com/site/lg-55-class-b5-series-oled/6635751.p"
+  },
+  {
+    "label": "📺 TCL 55\" Roku TV - Walmart",
+    "url": "https://www.walmart.com/ip/TCL-55-Class-4K-UHD-LED-Smart-Roku-TV/517609186"
+  },
+  {
+    "label": "💻 HP 15\" Laptop - Walmart",
+    "url": "https://www.walmart.com/ip/HP-15-Laptop-Intel-Core-i5/479572468"
+  },
+  {
+    "label": "🏠 Google Nest Hub - Best Buy",
+    "url": "https://www.bestbuy.com/site/google-nest-hub-2nd-gen/6450820.p"
+  },
+  {
+    "label": "🎧 Sony WH-1000XM5 - Best Buy",
+    "url": "https://www.bestbuy.com/site/sony-wh-1000xm5/6505727.p"
+  },
+  {
+    "label": "🎧 Sony WH-1000XM4 - Walmart",
+    "url": "https://www.walmart.com/ip/Sony-WH-1000XM4-Wireless-Headphones/574297935"
+  },
+  {
+    "label": "📷 GoPro HERO13 - Best Buy",
+    "url": "https://www.bestbuy.com/site/gopro-hero13-black/6593210.p"
+  },
+  {
+    "label": "📷 Instax Mini 12 - Walmart",
+    "url": "https://www.walmart.com/ip/FUJIFILM-INSTAX-MINI-12-Instant-Film-Camera-Clay-White/1020921431?classType=VARIANT&athbdg=L1600"
+  },
+  {
+    "label": "🏠 Ring Doorbell Plus - Best Buy",
+    "url": "https://www.bestbuy.com/site/ring-battery-doorbell-plus/6531758.p"
+  },
+  {
+    "label": "🎮 PS5 DualSense - Best Buy",
+    "url": "https://www.bestbuy.com/site/sony-dualsense-wireless-controller/6430163.p"
+  },
+  {
+    "label": "🎮 PS5 DualSense - Walmart",
+    "url": "https://www.walmart.com/ip/DualSense-wireless-controller-TBD-LE/18022562689?classType=VARIANT&athbdg=L1103"
+  },
+  {
+    "label": "📷 GoPro HERO11 - Walmart",
+    "url": "https://www.walmart.com/ip/GoPro-HERO12-Black-Camera/3048456636?classType=REGULAR"
+  },
+  {
+    "label": "💻 MacBook Air M3 - Walmart",
+    "url": "https://www.walmart.com/ip/Apple-MacBook-Air-13-in-M3-8C-CPU-10C-GPU-8GB-512GB-Starlight-MRXU3LL-A-Spring-2024/5330826150?classType=VARIANT"
+  },
+  {
+    "label": "📺 TCL 55\" QLED - Walmart",
+    "url": "https://www.walmart.com/ip/TCL-Google-TV-55Q51K/14566603957?classType=REGULAR&athbdg=L1103"
+  },
+  {
+    "label": "🎮 Xbox Series S - Walmart",
+    "url": "https://www.walmart.com/ip/Microsoft-Xbox-Series-S-512GB/606518560?classType=REGULAR"
+  },
+  {
+    "label": "🎧 Sony WH-1000XM5 - Walmart",
+    "url": "https://www.walmart.com/ip/Sony-WH-1000XM5-SILVER-Wireless-Over-Ear-Noise-Canceling-Headphones-Silver-with-3-Year-Amber-Protection-Plan-2022/15147009335?classType=REGULAR"
+  },
+  {
+    "label": "🏠 Kasa Smart Plug - Walmart",
+    "url": "https://www.walmart.com/ip/TP-Link-Kasa-Smart-EP10P2-Kasa-Smart-Plug-Ultra-Mini-15A-2-Pack/671644488?classType=VARIANT"
+  }
+];
+  const stmt = db.prepare("INSERT INTO watched_urls (user_id, url, label, created_at) VALUES (?, ?, ?, datetime('now'))");
+  let added = 0;
+  for (const { url, label } of DEMO_URLS) { stmt.run(demo.id, url, label); added++; }
+  // Trigger background seed
+  seedDemoPricesIfNeeded().catch(() => {});
+  return reply.send({ success: true, message: 'Demo seeded', userId: demo.id, urlCount: added });
+});
+
 // Temp admin: demo account status check
 app.get('/admin/demo-status', async (req, reply) => {
   const { secret } = req.query;
