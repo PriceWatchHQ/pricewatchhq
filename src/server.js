@@ -650,14 +650,26 @@ async function seedDemoPricesIfNeeded() {
   }
 }
 
+
+// Admin: get price history for a URL by id
+app.get('/admin/price-history', async (req, reply) => {
+  const { secret, id } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  const url = db.prepare('SELECT label, url, last_price FROM watched_urls WHERE id=?').get(id);
+  const history = db.prepare('SELECT price, recorded_at FROM price_history WHERE watched_url_id=? ORDER BY recorded_at DESC LIMIT 50').all(id);
+  return reply.send({ url, history });
+});
+
 // Start server
 try {
   await app.listen({ port: PORT, host: '0.0.0.0' });
-  startScheduler();
-  seedDemoPricesIfNeeded().catch(err => console.error('[seed] Uncaught:', err.message));
+  if (process.env.NODE_ENV !== 'staging') startScheduler(); else console.log('[staging] Scheduler disabled');
+  if (process.env.NODE_ENV !== 'staging') seedDemoPricesIfNeeded().catch(err => console.error('[seed] Uncaught:', err.message));
   console.log(`PriceWatch HQ running on http://localhost:${PORT}`);
 } catch (err) {
   app.log.error(err);
   process.exit(1);
 }
+
 
