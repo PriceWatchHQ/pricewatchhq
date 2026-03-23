@@ -201,6 +201,17 @@ export async function scrapePriceAndStock(url) {
   // Extract stock status (reuse the html we already fetched)
   const stockStatus = await scrapeStockStatus(url, html);
 
+  // If price still null, try ZenRows tier-3 fallback
+  if (price === null && process.env.ZENROWS_KEY) {
+    console.log(`[scraper] wreq-js returned null price for ${url}, trying ZenRows...`);
+    try {
+      const zenResult = await scrapeViaZenRows(url);
+      if (zenResult.price !== null) return { price: zenResult.price, stockStatus: zenResult.stockStatus ?? stockStatus };
+    } catch (err) {
+      console.error(`[scraper] ZenRows fallback error for ${url}:`, err.message);
+    }
+  }
+
   return { price, stockStatus };
 }
 
@@ -381,9 +392,21 @@ export async function scrapeViaZenRows(url) {
 
   // 3. Regex scan for price patterns in full HTML (catches script tags, inline JSON, data attrs)
   if (!price) {
-    const matches = [...html.matchAll(/"(?:price|currentPrice|salePrice|specialPrice|regularPrice)"\s*:\s*"?(\d+\.?\d{0,2})"?/g)];
+    const matches = [...html.matchAll(/"(?:price|currentPrice|salePrice|specialPrice|regularPrice|unitPrice|listPrice)"\s*:\s*"?(\d+\.?\d{0,2})"?/g)];
     const prices = matches.map(m => parseFloat(m[1])).filter(p => p > 0.5 && p < 100000);
     if (prices.length) price = prices[0];
+  }
+
+  // 4. Dollar-sign pattern fallback (e.g. "$11.98" appearing in page text)
+  if (!price) {
+    const dollarMatches = [...html.matchAll(/\$(\d+\.\d{2})/g)];
+    const prices = dollarMatches.map(m => parseFloat(m[1])).filter(p => p > 0.5 && p < 100000);
+    // Take the most common price (likely the actual product price, not shipping/tax)
+    if (prices.length) {
+      const freq = {};
+      prices.forEach(p => freq[p] = (freq[p] || 0) + 1);
+      price = parseFloat(Object.entries(freq).sort((a,b) => b[1]-a[1])[0][0]);
+    }
   }
 
   // Stock detection
