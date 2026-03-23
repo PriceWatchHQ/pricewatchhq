@@ -427,11 +427,29 @@ export async function scrapeViaZenRows(url) {
     }
   }
 
-  // Stock detection
-  const bodyText = $("body").text().toLowerCase();
+  // Stock detection — check specific elements only, not full body text
+  // (body text catches "out of stock" from related/recommended products)
   let stockStatus = null;
-  if (/add to cart|in stock|available/i.test(bodyText)) stockStatus = "in_stock";
-  if (/out of stock|sold out|unavailable/i.test(bodyText)) stockStatus = "out_of_stock";
+  
+  // Priority 1: schema.org availability
+  const schemaAvail = $('[itemprop="availability"]').attr('href') || $('[itemprop="availability"]').attr('content') || '';
+  if (/InStock/i.test(schemaAvail)) stockStatus = 'in_stock';
+  else if (/OutOfStock/i.test(schemaAvail)) stockStatus = 'out_of_stock';
+
+  // Priority 2: Add to cart button = definitely in stock
+  if (!stockStatus) {
+    const cartBtns = $('button, [role="button"], input[type="submit"]').filter((_, el) => {
+      const t = $(el).text().toLowerCase();
+      return t.includes('add to cart') || t.includes('add to bag') || t.includes('buy now');
+    });
+    if (cartBtns.length > 0) stockStatus = 'in_stock';
+  }
+
+  // Priority 3: explicit OOS elements (not full body — just targeted selectors)
+  if (!stockStatus) {
+    const oosEl = $('[class*="out-of-stock"], [class*="outOfStock"], [class*="sold-out"], [data-availability="OutOfStock"]');
+    if (oosEl.length > 0) stockStatus = 'out_of_stock';
+  }
 
   console.log(`[scraper] ZenRows result for ${url}: price=${price}, stock=${stockStatus} (html=${html.length} bytes)`);
   return { price, stockStatus };
