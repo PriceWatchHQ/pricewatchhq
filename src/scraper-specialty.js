@@ -116,9 +116,23 @@ function findPriceInSchema(obj) {
 }
 
 function detectStockFromHtml(html) {
-  const lower = html.toLowerCase();
-  if (/out of stock|sold out|unavailable|currently unavailable/i.test(lower)) return 'out_of_stock';
-  if (/add to cart|in stock|available/i.test(lower)) return 'in_stock';
+  // Use targeted approach — full body text catches OOS from related/recommended products
+  
+  // Check schema.org availability (most reliable)
+  const schemaMatch = html.match(/itemprop=["']availability["'][^>]*(?:href|content)=["']([^"']+)["']/i) ||
+                      html.match(/["']availability["']\s*:\s*["']([^"']+)["']/);
+  if (schemaMatch) {
+    const val = schemaMatch[1].toLowerCase();
+    if (val.includes('instock') || val.includes('in_stock')) return 'in_stock';
+    if (val.includes('outofstock') || val.includes('out_of_stock')) return 'out_of_stock';
+  }
+  
+  // Only check OOS in specific CSS class names, not full body
+  if (/class=["'][^"']*(?:out-of-stock|outOfStock|sold-out|soldOut)[^"']*["']/i.test(html)) return 'out_of_stock';
+  
+  // Add to cart button = in stock
+  if (/add to cart/i.test(html)) return 'in_stock';
+  
   return null;
 }
 
