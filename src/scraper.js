@@ -3,6 +3,7 @@ import { get as wreqGet } from 'wreq-js';
 import { scrapePriceAndStockHeadless } from './scraper-headless.js';
 import { scrapePriceAndStockPlaywright } from './scraper-playwright.js';
 import { scrapePriceAndStockRetail, isRetailUrl } from './scraper-retail.js';
+import { scrapePriceAndStockSpecialty, isSpecialtyUrl } from './scraper-specialty.js';
 
 // DataImpulse residential proxy (passed to wreq-js when set)
 const PROXY_URL = process.env.PROXY_URL || null;
@@ -277,7 +278,7 @@ function extractPriceFromSchemaObject(obj) {
 /**
  * Try the fast HTTP scraper first; if price is null, fall back to headless browser.
  * When usePlaywright is true, adds a Playwright stealth tier between HTTP and Puppeteer.
- * Fallback chain: HTTP → Retail stealth (if retail URL) → Playwright generic → Puppeteer headless.
+ * Fallback chain: HTTP → Specialty (GameStop, Hy-Vee, etc.) → Retail stealth → Playwright → Puppeteer headless → ZenRows.
  * Returns { price, stockStatus }.
  */
 export async function scrapePriceAndStockWithFallback(url, usePlaywright = false) {
@@ -286,6 +287,23 @@ export async function scrapePriceAndStockWithFallback(url, usePlaywright = false
   if (httpResult.price !== null) {
     console.log(`[scraper] HTTP scraper succeeded for ${url}`);
     return httpResult;
+  }
+
+  // Specialty scrapers (GameStop, Hy-Vee, TJ Maxx, Home Depot, Lowes, Michaels)
+  if (isSpecialtyUrl(url)) {
+    console.log(`[scraper] HTTP scraper returned no price for ${url}, trying specialty scraper...`);
+    try {
+      const specialtyResult = await scrapePriceAndStockSpecialty(url);
+      if (specialtyResult.price !== null) {
+        console.log(`[scraper] Specialty scraper succeeded for ${url}: price=${specialtyResult.price}`);
+        return {
+          price: specialtyResult.price,
+          stockStatus: specialtyResult.stockStatus ?? httpResult.stockStatus,
+        };
+      }
+    } catch (err) {
+      console.error(`[scraper] Specialty scraper failed for ${url}:`, err.message);
+    }
   }
 
   // Retail-specific stealth scraper (Walmart, Best Buy, Target)
@@ -362,7 +380,7 @@ export async function scrapeViaZenRows(url) {
   const ZENROWS_KEY = process.env.ZENROWS_KEY;
   if (!ZENROWS_KEY) return { price: null, stockStatus: null };
 
-  const apiUrl = `https://api.zenrows.com/v1/?apikey=${ZENROWS_KEY}&url=${encodeURIComponent(url)}&premium_proxy=true&js_render=true&antibot=true&wait=4000`;
+  const apiUrl = `https://api.zenrows.com/v1/?apikey=${ZENROWS_KEY}&url=${encodeURIComponent(url)}&premium_proxy=true&js_render=true&antibot=true&wait=2000`;
 
   let res;
   try {
@@ -392,7 +410,7 @@ export async function scrapeViaZenRows(url) {
 
   // 3. Regex scan for price patterns in full HTML (catches script tags, inline JSON, data attrs)
   if (!price) {
-    const matches = [...html.matchAll(/"(?:price|currentPrice|salePrice|specialPrice|regularPrice|unitPrice|listPrice)"\s*:\s*"?(\d+\.?\d{0,2})"?/g)];
+    const matches = [...html.matchAll(/"(?:price|currentPrice|salePrice|specialPrice|regularPrice|unitPrice|listPrice)"\s*:\s*"?(\d+\.?\d*)"?/g)];
     const prices = matches.map(m => parseFloat(m[1])).filter(p => p > 0.5 && p < 100000);
     if (prices.length) price = prices[0];
   }
