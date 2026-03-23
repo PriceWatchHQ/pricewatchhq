@@ -373,6 +373,23 @@ app.get('/admin/user-status', async (req, reply) => {
 });
 
 
+
+// Admin: reset last_checked_at for all null-price URLs so scheduler retries them
+app.get('/admin/reset-null-prices', async (req, reply) => {
+  const { secret, email } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  let result;
+  if (email) {
+    const user = db.prepare('SELECT id FROM users WHERE email=?').get(email);
+    if (!user) return reply.send({ error: 'User not found' });
+    result = db.prepare("UPDATE watched_urls SET last_checked_at=NULL, fail_count=0 WHERE user_id=? AND last_price IS NULL").run(user.id);
+  } else {
+    result = db.prepare("UPDATE watched_urls SET last_checked_at=NULL, fail_count=0 WHERE last_price IS NULL").run();
+  }
+  return reply.send({ success: true, reset: result.changes });
+});
+
 // Admin: test scrape a single URL directly
 app.get('/admin/test-scrape', async (req, reply) => {
   const { secret, url } = req.query;
