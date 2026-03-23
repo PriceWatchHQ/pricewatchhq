@@ -1128,12 +1128,16 @@ export async function scrapeAmazonViaScraperAPI(url) {
     let price = null;
     const amazonPriceSelectors = [
       { selector: '#corePrice_feature_div .a-price .a-offscreen', attr: null },
+      { selector: '#corePriceDisplay_desktop_feature_div .priceToPay', attr: null },
+      { selector: '#buyBoxAccordion .a-price .a-offscreen', attr: null },
+      { selector: '.reinventPricePriceToPayMargin', attr: null },
       { selector: '#priceblock_ourprice', attr: null },
       { selector: '#priceblock_dealprice', attr: null },
       { selector: '#price_inside_buybox', attr: null },
       { selector: '.a-price .a-offscreen', attr: null },
       { selector: '#newBuyBoxPrice', attr: null },
       { selector: '#apex_offerDisplay_desktop .a-price .a-offscreen', attr: null },
+      { selector: '#tp_price_block_total_price_ww .a-offscreen', attr: null },
       { selector: '[itemprop="price"]', attr: 'content' },
     ];
     for (const { selector, attr } of amazonPriceSelectors) {
@@ -1237,12 +1241,16 @@ export async function scrapeAmazonViaZenRows(url) {
     if (price === null) {
       const amazonPriceSelectors = [
         '#corePrice_feature_div .a-price .a-offscreen',
+        '#corePriceDisplay_desktop_feature_div .priceToPay',
+        '#buyBoxAccordion .a-price .a-offscreen',
+        '.reinventPricePriceToPayMargin',
         '#priceblock_ourprice',
         '#priceblock_dealprice',
         '#price_inside_buybox',
         '.a-price .a-offscreen',
         '#newBuyBoxPrice',
         '#apex_offerDisplay_desktop .a-price .a-offscreen',
+        '#tp_price_block_total_price_ww .a-offscreen',
       ];
       for (const sel of amazonPriceSelectors) {
         const el = $(sel).first();
