@@ -24,8 +24,8 @@ jobs:
 
       - name: Run health checks
         env:
-          STAGING_URL: ${{ secrets.STAGING_URL }}
-        run: node scripts/health-check.js $STAGING_URL
+          STAGING_URL: ${{ secrets.STAGING_URL || 'https://innovative-curiosity-staging.up.railway.app' }}
+        run: node scripts/health-check.js "$STAGING_URL"
 
       - name: Auto-merge to master if checks pass
         if: success()
