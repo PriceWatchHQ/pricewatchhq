@@ -661,3 +661,13 @@ try {
   process.exit(1);
 }
 
+
+// Admin: get price history for a URL by id
+app.get('/admin/price-history', async (req, reply) => {
+  const { secret, id } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  const url = db.prepare('SELECT label, url, last_price FROM watched_urls WHERE id=?').get(id);
+  const history = db.prepare('SELECT price, recorded_at FROM price_history WHERE watched_url_id=? ORDER BY recorded_at DESC LIMIT 50').all(id);
+  return reply.send({ url, history });
+});
