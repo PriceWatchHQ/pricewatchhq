@@ -122,16 +122,26 @@ function detectStockFromHtml(html) {
   return null;
 }
 
-async function zenrowsFetch(url, { jsRender = false, antibot = true, wait = null } = {}) {
+async function zenrowsFetch(url, { jsRender = false, antibot = true, wait = null, retries = 2, minSize = 5000 } = {}) {
   if (!ZENROWS_KEY) throw new Error('ZENROWS_KEY not set');
   let apiUrl = `https://api.zenrows.com/v1/?apikey=${ZENROWS_KEY}&url=${encodeURIComponent(url)}&premium_proxy=true`;
   if (antibot) apiUrl += '&antibot=true';
   if (jsRender) apiUrl += '&js_render=true';
   if (wait) apiUrl += `&wait=${wait}`;
 
-  const res = await fetch(apiUrl, { signal: AbortSignal.timeout(180_000) });
-  if (!res.ok) throw new Error(`ZenRows returned ${res.status} for ${url}`);
-  return res.text();
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(apiUrl, { signal: AbortSignal.timeout(180_000) });
+      if (!res.ok) throw new Error(`ZenRows returned ${res.status}`);
+      const html = await res.text();
+      if (html.length >= minSize) return html;
+      console.log(`[scraper-specialty] ZenRows attempt ${attempt}/${retries}: response too small (${html.length} bytes), retrying...`);
+    } catch (err) {
+      console.log(`[scraper-specialty] ZenRows attempt ${attempt}/${retries} failed: ${err.message}`);
+      if (attempt === retries) throw err;
+    }
+  }
+  throw new Error(`ZenRows failed after ${retries} attempts for ${url}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -319,7 +329,7 @@ function extractHomeDepotApolloPrice(html) {
 }
 
 async function scrapeHomeDepot(url) {
-  const html = await zenrowsFetch(url, { jsRender: true, antibot: true, wait: 8000 });
+  const html = await zenrowsFetch(url, { jsRender: true, antibot: true, wait: 8000, retries: 3, minSize: 50000 });
 
   if (html.length < 50000) {
     console.log(`[scraper-specialty] Home Depot: response too small (${html.length} bytes)`);
@@ -358,8 +368,8 @@ function extractLowesProductId(url) {
 }
 
 async function scrapeLowes(url) {
-  // ZenRows with js_render but NO wait param (wait causes 422 on Lowes)
-  const html = await zenrowsFetch(url, { jsRender: true, antibot: true });
+  // ZenRows WITHOUT js_render — Lowes SSRs price data into HTML. js_render causes 422 timeouts.
+  const html = await zenrowsFetch(url, { jsRender: false, antibot: true, retries: 3, minSize: 50000 });
 
   if (html.length < 50000) {
     console.log(`[scraper-specialty] Lowes: response too small (${html.length} bytes)`);

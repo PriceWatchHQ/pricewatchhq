@@ -450,9 +450,19 @@ app.get('/admin/test-scrape', async (req, reply) => {
   if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
   if (!url) return reply.status(400).send({ error: 'url required' });
   try {
+    const decodedUrl = decodeURIComponent(url);
+    const { isSpecialtyUrl, scrapePriceAndStockSpecialty } = await import('./scraper-specialty.js');
+    const { isRetailUrl, scrapePriceAndStockRetail } = await import('./scraper-retail.js');
     const { scrapePriceAndStock } = await import('./scraper.js');
-    const result = await scrapePriceAndStock(decodeURIComponent(url));
-    return reply.send({ url, result });
+    let result;
+    if (isSpecialtyUrl(decodedUrl)) {
+      result = await scrapePriceAndStockSpecialty(decodedUrl);
+    } else if (isRetailUrl(decodedUrl)) {
+      result = await scrapePriceAndStockRetail(decodedUrl);
+    } else {
+      result = await scrapePriceAndStock(decodedUrl);
+    }
+    return reply.send({ url: decodedUrl, result });
   } catch(e) {
     return reply.send({ url, error: e.message });
   }
