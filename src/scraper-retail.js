@@ -353,6 +353,10 @@ function buildExtractFn() {
  * @returns {Promise<{price: number|null, stockStatus: string|null, retailer: string}>}
  */
 export async function scrapePriceAndStockRetail(url) {
+  // Normalize URL: strip # fragments (browsers don't send these to server, causing variant selection loss)
+  // Keep query params (?preselect=, etc.) which ARE sent to the server
+  url = url.split('#')[0];
+
   const retailer = detectRetailer(url);
   const retailerName = retailer?.name || 'generic';
 

@@ -41,6 +41,8 @@ export function isSpecialtyUrl(url) {
  * Main entry point — routes to the right specialty scraper.
  */
 export async function scrapePriceAndStockSpecialty(url) {
+  url = url.split('#')[0]; // Strip # fragments, keep query params
+
   const site = detectSpecialty(url);
   if (!site) return { price: null, stockStatus: null };
 

@@ -171,6 +171,8 @@ export async function scrapeStockStatus(url, existingHtml) {
  * Returns { price, stockStatus }.
  */
 export async function scrapePriceAndStock(url) {
+  url = url.split('#')[0]; // Strip # fragments, keep query params
+
   // Amazon requires a US IP — DataImpulse proxy often provides non-US IPs which causes
   // Amazon to serve a "cannot ship to your location" page without the buy box/price.
   // Skip the proxy for Amazon to get direct US IP requests.
