@@ -134,15 +134,14 @@ const RETAILERS = {
       { selector: '[itemprop="price"]', attr: 'content' },
     ],
     stockSelectors: [
-      '[data-test="shipItButton"]',
       '[data-test="addToCartButton"]',
-      'button[data-test="orderPickupButton"]',
-      '[data-test="shipItButton"]:not([disabled])',
+      '[data-test="orderPickupButton"]',
+      'button[data-test="addToCartButton"]:not([disabled])',
     ],
     stockTextSelectors: [
       '[data-test="storeAvailability"]',
-      '[data-test*="fulfillment"]',
-      '[class*="Fulfillment"]',
+      // Note: avoid [data-test*="fulfillment"] — it picks up "out of stock" for shipping
+      // even when pickup is available. Use only specific availability text.
     ],
   },
 };

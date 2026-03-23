@@ -319,7 +319,7 @@ function extractHomeDepotApolloPrice(html) {
 }
 
 async function scrapeHomeDepot(url) {
-  const html = await zenrowsFetch(url, { jsRender: true, antibot: true, wait: 3000 });
+  const html = await zenrowsFetch(url, { jsRender: true, antibot: true, wait: 8000 });
 
   if (html.length < 50000) {
     console.log(`[scraper-specialty] Home Depot: response too small (${html.length} bytes)`);
