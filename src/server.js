@@ -653,7 +653,7 @@ async function seedDemoPricesIfNeeded() {
 // Start server
 try {
   await app.listen({ port: PORT, host: '0.0.0.0' });
-  startScheduler();
+  if (process.env.NODE_ENV !== 'staging') startScheduler(); else console.log('[staging] Scheduler disabled');
   if (process.env.NODE_ENV !== 'staging') seedDemoPricesIfNeeded().catch(err => console.error('[seed] Uncaught:', err.message));
   console.log(`PriceWatch HQ running on http://localhost:${PORT}`);
 } catch (err) {
