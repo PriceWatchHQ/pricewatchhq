@@ -372,6 +372,24 @@ app.get('/admin/user-status', async (req, reply) => {
   return reply.send({ user, urlCount: urls.length, nullPriceCount: nullCount, urls });
 });
 
+// Admin: get domains needing scraper research
+app.get('/admin/pending-domains', async (req, reply) => {
+  const { secret } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const { getPendingDomains } = await import('./scraper-domains.js');
+  const pending = getPendingDomains();
+  return reply.send({ pending, count: pending.length });
+});
+
+// Admin: mark domain status (called by local agent after implementing support)
+app.post('/admin/domain-status', async (req, reply) => {
+  const { secret, domain, status, scraperType, notes } = req.body || {};
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const { setDomainStatus } = await import('./scraper-domains.js');
+  setDomainStatus(domain, status, scraperType, notes);
+  return reply.send({ success: true });
+});
+
 // Temp admin: demo account status check
 // Admin: reset all unavailable retail URLs back to active
 app.get('/admin/reset-unavailable', async (req, reply) => {

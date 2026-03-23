@@ -1,4 +1,5 @@
 import db from '../db.js';
+import { checkDomain } from '../scraper-domains.js';
 
 function getSession(req) {
   const sessionToken = req.cookies?.session;
@@ -32,6 +33,12 @@ export default async function urlRoutes(fastify) {
       'INSERT INTO watched_urls (url, label, user_id) VALUES (?, ?, ?)'
     );
     const result = stmt.run(url, label || null, session.user_id);
+
+    // Check if the domain is supported for scraping
+    const domainStatus = checkDomain(url);
+    if (domainStatus === 'pending') {
+      console.log(`[domains] New unsupported domain queued for research: ${new URL(url).hostname}`);
+    }
 
     return reply.status(201).send({
       id: result.lastInsertRowid,

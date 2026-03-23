@@ -96,6 +96,24 @@ db.exec(`
     last_used_at INTEGER,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS scraper_domains (
+    domain TEXT PRIMARY KEY,
+    status TEXT NOT NULL DEFAULT 'pending',
+    scraper_type TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
+// Pre-populate known supported domains
+db.exec(`
+  INSERT OR IGNORE INTO scraper_domains (domain, status, scraper_type, notes) VALUES
+    ('amazon.com', 'supported', 'playwright', 'Amazon stealth browser'),
+    ('walmart.com', 'supported', 'custom', 'Walmart search page extraction'),
+    ('bestbuy.com', 'supported', 'custom', 'Best Buy API + wreq fallback'),
+    ('target.com', 'supported', 'custom', 'Target playwright');
 `);
 
 // Add billing columns to users if they don't exist (migrations)
