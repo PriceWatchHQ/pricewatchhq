@@ -112,16 +112,28 @@ async function processUrl({ entry, plan, useHeadless, usePlaywright }) {
         if (price === null && stockStatus === null) {
           const newFailCount = (entry.fail_count || 0) + 1;
           console.log(`[scheduler] No price or stock found for ${entry.url} (fail ${newFailCount})`);
-          // Retail URLs (Walmart, Best Buy, Target) get bot-blocked frequently — never mark unavailable,
-          // just keep retrying with last known price still displayed
-          const isRetail = /walmart\.com|bestbuy\.com|target\.com|gamestop\.com|hy-vee\.com|tjmaxx\.tjx\.com|homedepot\.com|lowes\.com|michaels\.com/i.test(entry.url);
-          if (!isRetail && newFailCount >= 5) {
+          // All retail/known-tricky URLs — never mark unavailable, keep retrying
+          const isKnownHard = /walmart\.com|bestbuy\.com|target\.com|gamestop\.com|hy-vee\.com|tjmaxx\.tjx\.com|homedepot\.com|lowes\.com|michaels\.com/i.test(entry.url);
+          if (!isKnownHard && newFailCount >= 5) {
             db.prepare(
               `UPDATE watched_urls SET fail_count = ?, url_status = 'unavailable', last_checked_at = datetime('now') WHERE id = ?`
             ).run(newFailCount, entry.id);
             console.log(`[scheduler] Marked ${entry.url} as unavailable after ${newFailCount} failures`);
+            // Flag domain for research — may need a new scraper
+            try {
+              const { checkDomain, setDomainStatus } = await import('./scraper-domains.js');
+              const domain = new URL(entry.url).hostname.replace(/^www\./, '');
+              const domainRow = db.prepare('SELECT * FROM scraper_domains WHERE domain = ?').get(domain);
+              if (!domainRow || domainRow.status === 'supported') {
+                // Re-queue for research — it was working before, now failing
+                db.prepare('INSERT OR REPLACE INTO scraper_domains (domain, status, notes, updated_at) VALUES (?, ?, ?, datetime(\'now\'))')
+                  .run(domain, 'pending', `URL failing after ${newFailCount} attempts: ${entry.url.slice(0, 100)}`);
+                console.log(`[scheduler] Re-queued domain for research: ${domain}`);
+              }
+            } catch (err) {
+              console.error('[scheduler] Domain re-queue error:', err.message);
+            }
           } else {
-            // For retail URLs or non-retail under threshold: just increment fail count, keep active
             db.prepare(
               `UPDATE watched_urls SET fail_count = ?, url_status = 'active', last_checked_at = datetime('now') WHERE id = ?`
             ).run(newFailCount, entry.id);
