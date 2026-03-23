@@ -429,6 +429,18 @@ app.get('/admin/reset-null-prices', async (req, reply) => {
   return reply.send({ success: true, reset: result.changes });
 });
 
+
+// Admin: directly write price for a specific URL by id
+app.post('/admin/write-price', async (req, reply) => {
+  const { secret, id, price, stockStatus } = req.body || {};
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  db.prepare("UPDATE watched_urls SET last_price=?, last_stock_status=?, last_checked_at=datetime('now'), fail_count=0, url_status='active' WHERE id=?")
+    .run(price, stockStatus || 'in_stock', id);
+  db.prepare("INSERT INTO price_history (watched_url_id, price, recorded_at) VALUES (?,?,datetime('now'))").run(id, price);
+  return reply.send({ success: true, id, price });
+});
+
 // Admin: test scrape a single URL directly
 app.get('/admin/test-scrape', async (req, reply) => {
   const { secret, url } = req.query;
