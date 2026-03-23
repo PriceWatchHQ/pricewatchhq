@@ -387,10 +387,13 @@ app.get('/admin/scrape-nulls', async (req, reply) => {
   setImmediate(async () => {
     const { scrapePriceAndStock } = await import('./scraper.js');
     const { isRetailUrl, scrapePriceAndStockRetail } = await import('./scraper-retail.js');
+    const { isSpecialtyUrl, scrapePriceAndStockSpecialty } = await import('./scraper-specialty.js');
     for (const entry of nullItems) {
       try {
         let price, stockStatus;
-        if (isRetailUrl(entry.url)) {
+        if (isSpecialtyUrl(entry.url)) {
+          ({ price, stockStatus } = await scrapePriceAndStockSpecialty(entry.url));
+        } else if (isRetailUrl(entry.url)) {
           ({ price, stockStatus } = await scrapePriceAndStockRetail(entry.url));
         } else {
           ({ price, stockStatus } = await scrapePriceAndStock(entry.url));
@@ -552,10 +555,13 @@ app.get('/admin/force-scrape', async (req, reply) => {
   setImmediate(async () => {
     const { scrapePriceAndStock, scrapePriceAndStockWithFallback } = await import('./scraper.js');
     const { isRetailUrl, scrapePriceAndStockRetail } = await import('./scraper-retail.js');
+    const { isSpecialtyUrl, scrapePriceAndStockSpecialty } = await import('./scraper-specialty.js');
     for (const entry of urls) {
       try {
         let price, stockStatus;
-        if (isRetailUrl(entry.url)) {
+        if (isSpecialtyUrl(entry.url)) {
+          ({ price, stockStatus } = await scrapePriceAndStockSpecialty(entry.url));
+        } else if (isRetailUrl(entry.url)) {
           ({ price, stockStatus } = await scrapePriceAndStockRetail(entry.url));
         } else {
           ({ price, stockStatus } = await scrapePriceAndStock(entry.url));

@@ -530,7 +530,7 @@ export async function scrapeWalmartViaZenRows(url) {
   if (!productId) return null;
 
   const walmartUrl = encodeURIComponent(url);
-  const apiUrl = `https://api.zenrows.com/v1/?apikey=${ZENROWS_KEY}&url=${walmartUrl}&premium_proxy=true&js_render=true`;
+  const apiUrl = `https://api.zenrows.com/v1/?apikey=${ZENROWS_KEY}&url=${walmartUrl}&premium_proxy=true&proxy_country=us&js_render=true&antibot=true`;
 
   try {
     console.log(`[scraper-retail] ZenRows Walmart lookup for product_id=${productId}`);
@@ -932,7 +932,7 @@ export async function scrapeBestBuyViaZenRows(url) {
 
   // Add intl=nosplash to bypass country selector, retry up to 3 times for consistent US IP
   const bbUrl = url.includes('?') ? `${url}&intl=nosplash` : `${url}?intl=nosplash`;
-  const apiUrl = `https://api.zenrows.com/v1/?apikey=${ZENROWS_KEY}&url=${encodeURIComponent(bbUrl)}&premium_proxy=true&js_render=true&wait=3000`;
+  const apiUrl = `https://api.zenrows.com/v1/?apikey=${ZENROWS_KEY}&url=${encodeURIComponent(bbUrl)}&premium_proxy=true&proxy_country=us&js_render=true&antibot=true&wait=3000`;
 
   try {
     console.log(`[scraper-retail] ZenRows Best Buy lookup: ${url}`);

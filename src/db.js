@@ -113,7 +113,13 @@ db.exec(`
     ('amazon.com', 'supported', 'playwright', 'Amazon stealth browser'),
     ('walmart.com', 'supported', 'custom', 'Walmart search page extraction'),
     ('bestbuy.com', 'supported', 'custom', 'Best Buy API + wreq fallback'),
-    ('target.com', 'supported', 'custom', 'Target playwright');
+    ('target.com', 'supported', 'custom', 'Target playwright'),
+    ('gamestop.com', 'supported', 'specialty', 'ZenRows no-jsrender + JSON-LD'),
+    ('hy-vee.com', 'supported', 'specialty', 'Direct GraphQL API (no auth)'),
+    ('tjmaxx.tjx.com', 'supported', 'specialty', 'quickview.jsp via wreq-js'),
+    ('homedepot.com', 'supported', 'specialty', 'ZenRows + Apollo state extraction'),
+    ('lowes.com', 'supported', 'specialty', 'ZenRows + JSON-LD'),
+    ('michaels.com', 'supported', 'specialty', 'wreq-js direct + JSON-LD');
 `);
 
 // Add billing columns to users if they don't exist (migrations)

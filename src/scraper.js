@@ -380,7 +380,7 @@ export async function scrapeViaZenRows(url) {
   const ZENROWS_KEY = process.env.ZENROWS_KEY;
   if (!ZENROWS_KEY) return { price: null, stockStatus: null };
 
-  const apiUrl = `https://api.zenrows.com/v1/?apikey=${ZENROWS_KEY}&url=${encodeURIComponent(url)}&premium_proxy=true&js_render=true&antibot=true&wait=2000`;
+  const apiUrl = `https://api.zenrows.com/v1/?apikey=${ZENROWS_KEY}&url=${encodeURIComponent(url)}&premium_proxy=true&proxy_country=us&js_render=true&antibot=true&wait=2000`;
 
   let res;
   try {

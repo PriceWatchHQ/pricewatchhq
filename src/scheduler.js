@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import db from './db.js';
 import { scrapePrice, scrapePriceAndStock, scrapePriceAndStockWithFallback } from './scraper.js';
 import { isRetailUrl, scrapePriceAndStockRetail } from './scraper-retail.js';
+import { isSpecialtyUrl, scrapePriceAndStockSpecialty } from './scraper-specialty.js';
 import { runPoster } from './poster.js';
 import { runEngager } from './engager.js';
 import { sendPriceAlert, sendSlackAlert, sendSmsAlert, sendStockAlert, sendSlackStockAlert, sendSmsStockAlert } from './mailer.js';
@@ -60,7 +61,7 @@ export function startScheduler() {
 
       const useHeadless = PLAN_LIMITS[plan]?.headlessScraper === true;
       const usePlaywright = PLAN_LIMITS[plan]?.playwrightScraper === true;
-      const needsBrowser = isRetailUrl(entry.url) || useHeadless;
+      const needsBrowser = isRetailUrl(entry.url) || isSpecialtyUrl(entry.url) || useHeadless;
 
       if (needsBrowser) {
         browserUrls.push({ entry, plan, useHeadless, usePlaywright });
@@ -98,7 +99,9 @@ async function processUrl({ entry, plan, useHeadless, usePlaywright }) {
         // Retail URLs (Walmart, Best Buy, Target) always use the retail scraper
         // regardless of plan — plain HTTP never works on these sites
         let price, stockStatus;
-        if (isRetailUrl(entry.url)) {
+        if (isSpecialtyUrl(entry.url)) {
+          ({ price, stockStatus } = await scrapePriceAndStockSpecialty(entry.url));
+        } else if (isRetailUrl(entry.url)) {
           ({ price, stockStatus } = await scrapePriceAndStockRetail(entry.url));
         } else if (useHeadless) {
           ({ price, stockStatus } = await scrapePriceAndStockWithFallback(entry.url, usePlaywright));
@@ -111,7 +114,7 @@ async function processUrl({ entry, plan, useHeadless, usePlaywright }) {
           console.log(`[scheduler] No price or stock found for ${entry.url} (fail ${newFailCount})`);
           // Retail URLs (Walmart, Best Buy, Target) get bot-blocked frequently — never mark unavailable,
           // just keep retrying with last known price still displayed
-          const isRetail = /walmart\.com|bestbuy\.com|target\.com/i.test(entry.url);
+          const isRetail = /walmart\.com|bestbuy\.com|target\.com|gamestop\.com|hy-vee\.com|tjmaxx\.tjx\.com|homedepot\.com|lowes\.com|michaels\.com/i.test(entry.url);
           if (!isRetail && newFailCount >= 5) {
             db.prepare(
               `UPDATE watched_urls SET fail_count = ?, url_status = 'unavailable', last_checked_at = datetime('now') WHERE id = ?`
