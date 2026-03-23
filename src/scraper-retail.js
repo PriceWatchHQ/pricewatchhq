@@ -832,9 +832,21 @@ export async function scrapeBestBuyViaWreq(url) {
   if (!PROXY_URL) return null;
 
   // Extract slug and SKU from URL: /site/product-slug/6447382.p
-  const match = url.match(/bestbuy\.com\/site\/([^\/]+)\/(\d+)\.p/);
-  if (!match) return null;
-  const [, slug, skuId] = match;
+  // OR /product/product-name/ALPHAID (affiliate/tracking format — no numeric SKU)
+  let slug, skuId;
+  const siteMatch = url.match(/bestbuy\.com\/site\/([^\/]+)\/(\d+)\.p/);
+  const productMatch = url.match(/bestbuy\.com\/product\/([^\/]+)\/([A-Za-z0-9]+)$/);
+
+  if (siteMatch) {
+    [, slug, skuId] = siteMatch;
+  } else if (productMatch) {
+    // /product/ URLs have alphanumeric tracking IDs, not SKUs — search by name only
+    slug = productMatch[1];
+    skuId = null;
+    console.log(`[scraper-retail] BB /product/ URL detected, searching by name: "${slug}"`);
+  } else {
+    return null;
+  }
 
   // Generate multiple search term variations to maximize chance of finding prices
   const base = slug.replace(/-/g, ' ');
@@ -852,7 +864,7 @@ export async function scrapeBestBuyViaWreq(url) {
 
   try {
     for (const searchTerm of searchVariations) {
-      console.log(`[scraper-retail] wreq-js Best Buy search for sku=${skuId}: "${searchTerm.slice(0, 40)}"`);
+      console.log(`[scraper-retail] wreq-js Best Buy search for ${skuId ? `sku=${skuId}` : 'name'}: "${searchTerm.slice(0, 40)}"`);
 
       const searchUrl = `https://www.bestbuy.com/site/searchpage.jsp?st=${encodeURIComponent(searchTerm)}&intl=nosplash`;
       const res = await wreqGet(searchUrl, {
@@ -869,12 +881,23 @@ export async function scrapeBestBuyViaWreq(url) {
       // Extract all SKU→price pairs from Apollo/Next.js SSR data
       const pairs = [...html.matchAll(/"skuId":"(\d+)"[^}]{0,500}"customerPrice":(\d+\.?\d*)/g)];
 
-      // Only use exact SKU match — never fall back to first result (causes wrong product prices)
-      const exact = pairs.find(([, s]) => s === skuId);
-      if (exact) {
-        price = parseFloat(exact[2]);
-        matchType = 'exact';
+      if (skuId) {
+        // Exact SKU match — never fall back to first result (causes wrong product prices)
+        const exact = pairs.find(([, s]) => s === skuId);
+        if (exact) {
+          price = parseFloat(exact[2]);
+          matchType = 'exact';
+        }
+      } else {
+        // /product/ URL — no SKU available, use first search result price
+        // The search term is derived from the product name slug, so first result is usually correct
+        if (pairs.length > 0) {
+          price = parseFloat(pairs[0][2]);
+          matchType = `name-search(sku=${pairs[0][1]})`;
+        }
+      }
 
+      if (price !== null) {
         // Stock from this page
         const dm = html.match(/"driverSku":true,"buttonState":"([^"]+)"/);
         if (dm) {

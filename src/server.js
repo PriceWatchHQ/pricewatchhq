@@ -381,6 +381,21 @@ app.get('/admin/pending-domains', async (req, reply) => {
   return reply.send({ pending, count: pending.length });
 });
 
+// Admin: backfill domain detection for all existing watched_urls
+app.get('/admin/backfill-domains', async (req, reply) => {
+  const { secret } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  const { checkDomain } = await import('./scraper-domains.js');
+  const urls = db.prepare('SELECT DISTINCT url FROM watched_urls').all();
+  let newDomains = 0;
+  for (const { url } of urls) {
+    const status = checkDomain(url);
+    if (status === 'pending') newDomains++;
+  }
+  return reply.send({ success: true, scanned: urls.length, newPending: newDomains });
+});
+
 // Admin: mark domain status (called by local agent after implementing support)
 app.post('/admin/domain-status', async (req, reply) => {
   const { secret, domain, status, scraperType, notes } = req.body || {};

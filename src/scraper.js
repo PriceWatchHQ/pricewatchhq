@@ -10,9 +10,22 @@ const PROXY_URL = process.env.PROXY_URL || null;
 const proxyAgent = PROXY_URL ? new HttpsProxyAgent(PROXY_URL) : null;
 
 const PRICE_SELECTORS = [
+  '[itemprop="price"]',
+  '[data-price]',
   '.price',
   '[class*="price"]',
-  '[itemprop="price"]',
+  '[class*="Price"]',
+  'span[class*="amount"]',
+  '[data-testid*="price"]',
+  '[data-testid*="Price"]',
+  '[class*="product-price"]',
+  '[class*="productPrice"]',
+  '[class*="sale-price"]',
+  '[class*="salePrice"]',
+  '[class*="current-price"]',
+  '[class*="currentPrice"]',
+  '[class*="offer-price"]',
+  '[class*="special-price"]',
 ];
 
 const USER_AGENT =
@@ -36,12 +49,16 @@ export async function scrapePrice(url) {
   const html = await res.text();
   const $ = load(html);
 
+  // Try JSON-LD structured data first
+  const jsonLdPrice = extractPriceFromJsonLd($);
+  if (jsonLdPrice !== null) return jsonLdPrice;
+
   for (const selector of PRICE_SELECTORS) {
     const el = $(selector).first();
     if (!el.length) continue;
 
     // Try the "content" attribute first (common on itemprop elements)
-    const raw = el.attr('content') || el.text();
+    const raw = el.attr('content') || el.attr('data-price') || el.text();
     const price = parsePrice(raw);
     if (price !== null) return price;
   }
@@ -165,20 +182,83 @@ export async function scrapePriceAndStock(url) {
 
   const $ = load(html);
 
-  // Extract price
-  let price = null;
-  for (const selector of PRICE_SELECTORS) {
-    const el = $(selector).first();
-    if (!el.length) continue;
-    const raw = el.attr('content') || el.text();
-    price = parsePrice(raw);
-    if (price !== null) break;
+  // Extract price — try JSON-LD structured data first (most reliable)
+  let price = extractPriceFromJsonLd($);
+
+  // Fall back to CSS selectors
+  if (price === null) {
+    for (const selector of PRICE_SELECTORS) {
+      const el = $(selector).first();
+      if (!el.length) continue;
+      const raw = el.attr('content') || el.attr('data-price') || el.text();
+      price = parsePrice(raw);
+      if (price !== null) break;
+    }
   }
 
   // Extract stock status (reuse the html we already fetched)
   const stockStatus = await scrapeStockStatus(url, html);
 
   return { price, stockStatus };
+}
+
+/**
+ * Extract price from JSON-LD (schema.org) structured data embedded in the page.
+ * Many retail sites (Home Depot, Lowe's, GameStop, Scheels, etc.) embed Product
+ * schema with offers containing price info.
+ */
+function extractPriceFromJsonLd($) {
+  const scripts = $('script[type="application/ld+json"]');
+  for (let i = 0; i < scripts.length; i++) {
+    try {
+      const data = JSON.parse($(scripts[i]).html());
+      const price = extractPriceFromSchemaObject(data);
+      if (price !== null) return price;
+    } catch {
+      // malformed JSON-LD, skip
+    }
+  }
+  return null;
+}
+
+function extractPriceFromSchemaObject(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+
+  // Handle arrays (some pages have multiple JSON-LD blocks in one script)
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const price = extractPriceFromSchemaObject(item);
+      if (price !== null) return price;
+    }
+    return null;
+  }
+
+  // Look for Product or IndividualProduct types
+  const type = obj['@type'];
+  const isProduct = type === 'Product' || type === 'IndividualProduct' ||
+    (Array.isArray(type) && (type.includes('Product') || type.includes('IndividualProduct')));
+
+  if (isProduct) {
+    // Try offers.price, offers[0].price, offers.lowPrice
+    const offers = obj.offers;
+    if (offers) {
+      const offerList = Array.isArray(offers) ? offers : [offers];
+      for (const offer of offerList) {
+        const rawPrice = offer.price ?? offer.lowPrice ?? offer.highPrice;
+        if (rawPrice != null) {
+          const num = parseFloat(String(rawPrice).replace(/[^0-9.]/g, ''));
+          if (Number.isFinite(num) && num > 0 && num <= 100000) return num;
+        }
+      }
+    }
+  }
+
+  // Recurse into @graph
+  if (obj['@graph']) {
+    return extractPriceFromSchemaObject(obj['@graph']);
+  }
+
+  return null;
 }
 
 /**

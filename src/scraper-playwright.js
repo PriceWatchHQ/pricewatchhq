@@ -7,13 +7,22 @@ chromium.use(StealthPlugin());
 const PROXY_URL = process.env.PROXY_URL || null;
 
 const PRICE_SELECTORS = [
-  '.price',
-  '[class*="price"]',
   '[itemprop="price"]',
   '[data-price]',
+  '.price',
+  '[class*="price"]',
   '[class*="Price"]',
   'span[class*="amount"]',
   '[data-testid*="price"]',
+  '[data-testid*="Price"]',
+  '[class*="product-price"]',
+  '[class*="productPrice"]',
+  '[class*="sale-price"]',
+  '[class*="salePrice"]',
+  '[class*="current-price"]',
+  '[class*="currentPrice"]',
+  '[class*="offer-price"]',
+  '[class*="special-price"]',
 ];
 
 const STOCK_SELECTORS = [
@@ -64,20 +73,51 @@ export async function scrapePriceAndStockPlaywright(url) {
       ({ priceSelectors, stockSelectors }) => {
         // --- Price extraction ---
         let price = null;
-        for (const sel of priceSelectors) {
-          const el = document.querySelector(sel);
-          if (!el) continue;
-          const raw =
-            el.getAttribute('content') ||
-            el.getAttribute('data-price') ||
-            el.textContent;
-          if (!raw) continue;
-          const cleaned = raw.replace(/[^0-9.,]/g, '').replace(/,/g, '');
-          const num = parseFloat(cleaned);
-          // Sanity check: prices must be between $0.01 and $100,000
-          if (Number.isFinite(num) && num > 0 && num <= 100000) {
-            price = num;
-            break;
+
+        // Try JSON-LD structured data first (most reliable for retail sites)
+        const ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
+        for (const script of ldScripts) {
+          try {
+            const data = JSON.parse(script.textContent);
+            const items = Array.isArray(data) ? data : (data['@graph'] || [data]);
+            for (const item of items) {
+              const type = item['@type'];
+              if (type === 'Product' || type === 'IndividualProduct' ||
+                  (Array.isArray(type) && (type.includes('Product') || type.includes('IndividualProduct')))) {
+                const offers = item.offers;
+                if (offers) {
+                  const offerList = Array.isArray(offers) ? offers : [offers];
+                  for (const offer of offerList) {
+                    const rawP = offer.price ?? offer.lowPrice ?? offer.highPrice;
+                    if (rawP != null) {
+                      const n = parseFloat(String(rawP).replace(/[^0-9.]/g, ''));
+                      if (Number.isFinite(n) && n > 0 && n <= 100000) { price = n; break; }
+                    }
+                  }
+                }
+              }
+              if (price !== null) break;
+            }
+          } catch {}
+          if (price !== null) break;
+        }
+
+        // Fall back to CSS selectors
+        if (price === null) {
+          for (const sel of priceSelectors) {
+            const el = document.querySelector(sel);
+            if (!el) continue;
+            const raw =
+              el.getAttribute('content') ||
+              el.getAttribute('data-price') ||
+              el.textContent;
+            if (!raw) continue;
+            const cleaned = raw.replace(/[^0-9.,]/g, '').replace(/,/g, '');
+            const num = parseFloat(cleaned);
+            if (Number.isFinite(num) && num > 0 && num <= 100000) {
+              price = num;
+              break;
+            }
           }
         }
 
