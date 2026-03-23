@@ -1,0 +1,21 @@
+name: Deploy Frontend to Cloudflare Pages
+
+on:
+  push:
+    branches:
+      - master  # Only deploy to prod from master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy Frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install wrangler
+        run: npm install -g wrangler
+
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_TOKEN }}
+        run: wrangler pages deploy public --project-name pricewatchhq
