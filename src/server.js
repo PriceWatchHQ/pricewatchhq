@@ -443,6 +443,21 @@ app.get('/admin/test-scrape', async (req, reply) => {
   }
 });
 
+
+// Admin: replace a watched URL (fix bad URLs)
+app.post('/admin/replace-url', async (req, reply) => {
+  const { secret, oldUrl, newUrl, label } = req.body || {};
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  const updates = {};
+  if (newUrl) updates.url = newUrl;
+  if (label) updates.label = label;
+  const sets = Object.keys(updates).map(k => `${k}=?`).join(', ');
+  const vals = [...Object.values(updates), oldUrl];
+  const result = db.prepare(`UPDATE watched_urls SET ${sets}, last_price=NULL, last_stock_status=NULL, last_checked_at=NULL, fail_count=0 WHERE url=?`).run(...vals);
+  return reply.send({ success: true, changed: result.changes });
+});
+
 // Admin: check env vars (for debugging Railway config)
 app.get('/admin/env-check', async (req, reply) => {
   const { secret } = req.query;
