@@ -372,6 +372,21 @@ app.get('/admin/user-status', async (req, reply) => {
   return reply.send({ user, urlCount: urls.length, nullPriceCount: nullCount, urls });
 });
 
+
+// Admin: test scrape a single URL directly
+app.get('/admin/test-scrape', async (req, reply) => {
+  const { secret, url } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  if (!url) return reply.status(400).send({ error: 'url required' });
+  try {
+    const { scrapePriceAndStock } = await import('./scraper.js');
+    const result = await scrapePriceAndStock(decodeURIComponent(url));
+    return reply.send({ url, result });
+  } catch(e) {
+    return reply.send({ url, error: e.message });
+  }
+});
+
 // Admin: check env vars (for debugging Railway config)
 app.get('/admin/env-check', async (req, reply) => {
   const { secret } = req.query;
