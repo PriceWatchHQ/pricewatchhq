@@ -372,6 +372,18 @@ app.get('/admin/user-status', async (req, reply) => {
   return reply.send({ user, urlCount: urls.length, nullPriceCount: nullCount, urls });
 });
 
+// Admin: check env vars (for debugging Railway config)
+app.get('/admin/env-check', async (req, reply) => {
+  const { secret } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  return reply.send({
+    PROXY_URL: process.env.PROXY_URL ? 'set (' + process.env.PROXY_URL.slice(0, 20) + '...)' : 'NOT SET',
+    BESTBUY_API_KEY: process.env.BESTBUY_API_KEY ? 'set' : 'NOT SET',
+    ZENROWS_KEY: process.env.ZENROWS_KEY ? 'set' : 'NOT SET',
+    NODE_ENV: process.env.NODE_ENV,
+  });
+});
+
 // Admin: get domains needing scraper research
 app.get('/admin/pending-domains', async (req, reply) => {
   const { secret } = req.query;
