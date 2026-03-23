@@ -322,8 +322,78 @@ export async function scrapePriceAndStockWithFallback(url, usePlaywright = false
     };
   } catch (err) {
     console.error(`[scraper] Headless scraper failed for ${url}:`, err.message);
-    return httpResult;
   }
+
+  // ZenRows premium proxy fallback (tier 3) — last resort for bot-protected sites
+  if (process.env.ZENROWS_KEY) {
+    console.log(`[scraper] Trying ZenRows fallback for ${url}...`);
+    try {
+      const zenResult = await scrapeViaZenRows(url);
+      if (zenResult.price !== null) {
+        return {
+          price: zenResult.price,
+          stockStatus: zenResult.stockStatus ?? httpResult.stockStatus,
+        };
+      }
+    } catch (err) {
+      console.error(`[scraper] ZenRows fallback failed for ${url}:`, err.message);
+    }
+  }
+
+  return httpResult;
+}
+
+/**
+ * Tier-3 fallback: ZenRows premium proxy with JS rendering + antibot.
+ * Handles bot-protected sites (Lowe's, Home Depot, GameStop, etc.).
+ */
+export async function scrapeViaZenRows(url) {
+  const ZENROWS_KEY = process.env.ZENROWS_KEY;
+  if (!ZENROWS_KEY) return { price: null, stockStatus: null };
+
+  const apiUrl = `https://api.zenrows.com/v1/?apikey=${ZENROWS_KEY}&url=${encodeURIComponent(url)}&premium_proxy=true&js_render=true&antibot=true&wait=4000`;
+
+  let res;
+  try {
+    res = await fetch(apiUrl, { signal: AbortSignal.timeout(60000) });
+  } catch (err) {
+    console.error(`[scraper] ZenRows fetch error for ${url}:`, err.message);
+    return { price: null, stockStatus: null };
+  }
+  if (!res.ok) {
+    console.log(`[scraper] ZenRows returned ${res.status} for ${url}`);
+    return { price: null, stockStatus: null };
+  }
+
+  const html = await res.text();
+  if (html.length < 5000) {
+    console.log(`[scraper] ZenRows response too small (${html.length} bytes) for ${url}, likely bot block`);
+    return { price: null, stockStatus: null };
+  }
+
+  const $ = load(html);
+
+  // 1. JSON-LD
+  let price = extractPriceFromJsonLd($);
+
+  // 2. itemprop
+  if (!price) price = parsePrice($("[itemprop=price]").attr("content") || $("[itemprop=price]").text());
+
+  // 3. Regex scan for price patterns in full HTML (catches script tags, inline JSON, data attrs)
+  if (!price) {
+    const matches = [...html.matchAll(/"(?:price|currentPrice|salePrice|specialPrice|regularPrice)"\s*:\s*"?(\d+\.?\d{0,2})"?/g)];
+    const prices = matches.map(m => parseFloat(m[1])).filter(p => p > 0.5 && p < 100000);
+    if (prices.length) price = prices[0];
+  }
+
+  // Stock detection
+  const bodyText = $("body").text().toLowerCase();
+  let stockStatus = null;
+  if (/add to cart|in stock|available/i.test(bodyText)) stockStatus = "in_stock";
+  if (/out of stock|sold out|unavailable/i.test(bodyText)) stockStatus = "out_of_stock";
+
+  console.log(`[scraper] ZenRows result for ${url}: price=${price}, stock=${stockStatus} (html=${html.length} bytes)`);
+  return { price, stockStatus };
 }
 
 /**
