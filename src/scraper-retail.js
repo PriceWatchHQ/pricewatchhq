@@ -1,6 +1,7 @@
 // Patchright patches the TLS/JA3 fingerprint to match real Chrome,
 // bypassing Akamai/PerimeterX bot detection that blocks playwright-extra.
 import { chromium } from 'patchright';
+import { load } from 'cheerio';
 import { get as wreqGet } from 'wreq-js';
 
 const PROXY_URL = process.env.PROXY_URL || null;
@@ -360,11 +361,24 @@ export async function scrapePriceAndStockRetail(url) {
   const retailerStockTextSelectors = retailer?.stockTextSelectors || [];
   const waitForSelector = retailer?.waitFor || '[itemprop="price"], .price';
 
-  // Amazon: go straight to browser — plain HTTP always gets captcha-blocked
-  // Playwright with stealth handles Amazon reliably
+  // Amazon: ScraperAPI structured data → ZenRows antibot → browser
   if (retailerName === 'amazon') {
-    // Fall through to Playwright browser below (no API tier for Amazon)
-    console.log('[scraper-retail] Amazon URL detected, using Playwright stealth browser');
+    // Tier 1: ScraperAPI Amazon structured data (cheapest, most reliable)
+    if (SCRAPERAPI_KEY) {
+      const apiResult = await scrapeAmazonViaScraperAPI(url);
+      if (apiResult && apiResult.price !== null) return apiResult;
+      console.log('[scraper-retail] ScraperAPI Amazon returned no price, trying ZenRows...');
+    }
+
+    // Tier 2: ZenRows with antibot (handles captcha/bot detection)
+    if (ZENROWS_KEY) {
+      const zenResult = await scrapeAmazonViaZenRows(url);
+      if (zenResult && zenResult.price !== null) return zenResult;
+      console.log('[scraper-retail] ZenRows Amazon returned no price, falling back to browser');
+    }
+
+    // Tier 3: fall through to Patchright browser below
+    console.log('[scraper-retail] Amazon URL detected, falling back to Playwright stealth browser');
   }
 
   // Best Buy: BB Official API → wreq-js search → ZenRows → browser
@@ -1054,4 +1068,261 @@ export async function scrapeWalmartViaScraperAPI(url) {
     console.error(`[scraper-retail] ScraperAPI Walmart error:`, err.message);
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Amazon — ScraperAPI structured data endpoint
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract ASIN from an Amazon URL.
+ * Handles /dp/ASIN, /gp/product/ASIN, /product/name/dp/ASIN patterns.
+ */
+function extractAmazonAsin(url) {
+  const match = url.match(/(?:\/dp\/|\/gp\/product\/|\/product\/[^/]+\/dp\/)([A-Z0-9]{10})/i);
+  return match ? match[1].toUpperCase() : null;
+}
+
+/**
+ * Scrape Amazon using ScraperAPI's generic endpoint with render=true.
+ * ScraperAPI handles bot detection/captcha and returns the full rendered HTML.
+ * We then extract price from Amazon's DOM selectors (same as the Patchright path).
+ * Cost: ~10 credits per request.
+ */
+export async function scrapeAmazonViaScraperAPI(url) {
+  if (!SCRAPERAPI_KEY) return null;
+
+  const asin = extractAmazonAsin(url);
+  if (!asin) {
+    console.log(`[scraper-retail] Could not extract Amazon ASIN from: ${url}`);
+    return null;
+  }
+
+  const amazonUrl = encodeURIComponent(`https://www.amazon.com/dp/${asin}`);
+  const apiUrl = `https://api.scraperapi.com/?api_key=${SCRAPERAPI_KEY}&url=${amazonUrl}&render=true&country_code=us`;
+
+  try {
+    console.log(`[scraper-retail] ScraperAPI Amazon lookup for ASIN=${asin}`);
+    const res = await fetch(apiUrl, { signal: AbortSignal.timeout(60_000) });
+
+    if (!res.ok) {
+      console.error(`[scraper-retail] ScraperAPI Amazon returned ${res.status} for ASIN=${asin}`);
+      return null;
+    }
+
+    const html = await res.text();
+
+    if (html.length < 10_000) {
+      console.log(`[scraper-retail] ScraperAPI Amazon response too small (${html.length} bytes), likely blocked`);
+      return null;
+    }
+
+    if (/captcha|robot|automated|unusual traffic|Type the characters/i.test(html.slice(0, 5000))) {
+      console.log(`[scraper-retail] ScraperAPI Amazon got captcha page for ASIN=${asin}`);
+      return null;
+    }
+
+    const $ = load(html);
+
+    // Extract price from Amazon-specific selectors
+    let price = null;
+    const amazonPriceSelectors = [
+      { selector: '#corePrice_feature_div .a-price .a-offscreen', attr: null },
+      { selector: '#priceblock_ourprice', attr: null },
+      { selector: '#priceblock_dealprice', attr: null },
+      { selector: '#price_inside_buybox', attr: null },
+      { selector: '.a-price .a-offscreen', attr: null },
+      { selector: '#newBuyBoxPrice', attr: null },
+      { selector: '#apex_offerDisplay_desktop .a-price .a-offscreen', attr: null },
+      { selector: '[itemprop="price"]', attr: 'content' },
+    ];
+    for (const { selector, attr } of amazonPriceSelectors) {
+      const el = $(selector).first();
+      if (!el.length) continue;
+      const raw = attr ? el.attr(attr) : el.text();
+      const num = parsePriceLocal(raw);
+      if (num !== null) { price = num; break; }
+    }
+
+    // Fallback: regex scan for price JSON in page data
+    if (price === null) {
+      const matches = [...html.matchAll(/"(?:price|buyingPrice|priceAmount|our_price|deal_price)"\s*:\s*"?(\d+\.?\d*)"?/g)];
+      const prices = matches.map(m => parseFloat(m[1])).filter(p => p > 0.5 && p < 100000);
+      if (prices.length) price = prices[0];
+    }
+
+    // Stock detection
+    let stockStatus = null;
+    const cartBtn = $('[id="add-to-cart-button"], [name="submit.add-to-cart"]').first();
+    if (cartBtn.length && !cartBtn.attr('disabled')) {
+      stockStatus = 'in_stock';
+    } else {
+      const availText = ($('#availability').text() || '').toLowerCase().trim();
+      if (/in stock|in-stock|available|ships from|only \d+ left/i.test(availText)) {
+        stockStatus = 'in_stock';
+      } else if (/out of stock|sold out|unavailable|currently unavailable/i.test(availText)) {
+        stockStatus = 'out_of_stock';
+        const otherSellers = $('#olp_feature_div, #moreBuyingChoices_feature_div, #buybox-see-all-buying-choices').first();
+        if (otherSellers.length && otherSellers.text().trim().length > 0) {
+          stockStatus = 'third_party';
+        }
+      }
+    }
+
+    if (price !== null && !stockStatus) stockStatus = 'in_stock';
+
+    console.log(`[scraper-retail] ScraperAPI Amazon result: ASIN=${asin}, price=${price}, stock=${stockStatus} (html=${html.length} bytes)`);
+    return price !== null ? { price, stockStatus, retailer: 'amazon' } : null;
+  } catch (err) {
+    console.error(`[scraper-retail] ScraperAPI Amazon error:`, err.message?.slice(0, 100));
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Amazon — ZenRows with antibot
+// ---------------------------------------------------------------------------
+
+/**
+ * Scrape Amazon using ZenRows with js_render + antibot.
+ * ZenRows handles Amazon's captcha/bot detection with premium residential proxies.
+ * Extracts price from JSON-LD, price selectors, and regex patterns.
+ */
+export async function scrapeAmazonViaZenRows(url) {
+  if (!ZENROWS_KEY) return null;
+
+  const asin = extractAmazonAsin(url);
+  if (!asin) return null;
+
+  // Use the canonical /dp/ URL format for consistency
+  const amazonUrl = `https://www.amazon.com/dp/${asin}`;
+  const apiUrl = `https://api.zenrows.com/v1/?apikey=${ZENROWS_KEY}&url=${encodeURIComponent(amazonUrl)}&premium_proxy=true&proxy_country=us&js_render=true&antibot=true&wait=3000`;
+
+  try {
+    console.log(`[scraper-retail] ZenRows Amazon lookup for ASIN=${asin}`);
+    const res = await fetch(apiUrl, { signal: AbortSignal.timeout(60_000) });
+
+    if (!res.ok) {
+      console.error(`[scraper-retail] ZenRows Amazon returned ${res.status} for ASIN=${asin}`);
+      return null;
+    }
+
+    const html = await res.text();
+
+    if (html.length < 10_000) {
+      console.log(`[scraper-retail] ZenRows Amazon response too small (${html.length} bytes), likely blocked`);
+      return null;
+    }
+
+    // Check for captcha
+    if (/captcha|robot|automated|unusual traffic|Type the characters/i.test(html.slice(0, 5000))) {
+      console.log(`[scraper-retail] ZenRows Amazon got captcha page for ASIN=${asin}`);
+      return null;
+    }
+
+    const $ = load(html);
+
+    // 1. JSON-LD structured data
+    let price = null;
+    const jsonLdScripts = $('script[type="application/ld+json"]');
+    for (let i = 0; i < jsonLdScripts.length; i++) {
+      try {
+        const data = JSON.parse($(jsonLdScripts[i]).html());
+        const extracted = extractPriceFromSchemaObjectLocal(data);
+        if (extracted !== null) { price = extracted; break; }
+      } catch {}
+    }
+
+    // 2. Amazon-specific price selectors
+    if (price === null) {
+      const amazonPriceSelectors = [
+        '#corePrice_feature_div .a-price .a-offscreen',
+        '#priceblock_ourprice',
+        '#priceblock_dealprice',
+        '#price_inside_buybox',
+        '.a-price .a-offscreen',
+        '#newBuyBoxPrice',
+        '#apex_offerDisplay_desktop .a-price .a-offscreen',
+      ];
+      for (const sel of amazonPriceSelectors) {
+        const el = $(sel).first();
+        if (!el.length) continue;
+        const raw = el.attr('content') || el.text();
+        const num = parsePriceLocal(raw);
+        if (num !== null) { price = num; break; }
+      }
+    }
+
+    // 3. Regex scan for price JSON in page data
+    if (price === null) {
+      const matches = [...html.matchAll(/"(?:price|buyingPrice|priceAmount|our_price|deal_price)"\s*:\s*"?(\d+\.?\d*)"?/g)];
+      const prices = matches.map(m => parseFloat(m[1])).filter(p => p > 0.5 && p < 100000);
+      if (prices.length) price = prices[0];
+    }
+
+    // Stock detection
+    let stockStatus = null;
+    const cartBtn = $('[id="add-to-cart-button"], [name="submit.add-to-cart"]').first();
+    if (cartBtn.length && !cartBtn.attr('disabled')) {
+      stockStatus = 'in_stock';
+    } else {
+      const availText = ($('#availability').text() || '').toLowerCase().trim();
+      if (/in stock|in-stock|available|ships from|only \d+ left/i.test(availText)) {
+        stockStatus = 'in_stock';
+      } else if (/out of stock|sold out|unavailable|currently unavailable/i.test(availText)) {
+        stockStatus = 'out_of_stock';
+        // Check for 3rd party sellers
+        const otherSellers = $('#olp_feature_div, #moreBuyingChoices_feature_div, #buybox-see-all-buying-choices').first();
+        if (otherSellers.length && otherSellers.text().trim().length > 0) {
+          stockStatus = 'third_party';
+        }
+      }
+    }
+
+    if (price !== null && !stockStatus) stockStatus = 'in_stock';
+
+    console.log(`[scraper-retail] ZenRows Amazon result: ASIN=${asin}, price=${price}, stock=${stockStatus} (html=${html.length} bytes)`);
+    return price !== null ? { price, stockStatus, retailer: 'amazon' } : null;
+  } catch (err) {
+    console.error(`[scraper-retail] ZenRows Amazon error:`, err.message?.slice(0, 100));
+    return null;
+  }
+}
+
+// Local helpers for ZenRows Amazon (avoid importing from scraper.js to prevent circular deps)
+function parsePriceLocal(raw) {
+  if (!raw) return null;
+  const cleaned = raw.replace(/[^0-9.,]/g, '').replace(/,/g, '');
+  const num = parseFloat(cleaned);
+  if (!Number.isFinite(num) || num <= 0 || num > 100000) return null;
+  return num;
+}
+
+function extractPriceFromSchemaObjectLocal(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const price = extractPriceFromSchemaObjectLocal(item);
+      if (price !== null) return price;
+    }
+    return null;
+  }
+  const type = obj['@type'];
+  const isProduct = type === 'Product' || type === 'IndividualProduct' ||
+    (Array.isArray(type) && (type.includes('Product') || type.includes('IndividualProduct')));
+  if (isProduct) {
+    const offers = obj.offers;
+    if (offers) {
+      const offerList = Array.isArray(offers) ? offers : [offers];
+      for (const offer of offerList) {
+        const rawPrice = offer.price ?? offer.lowPrice ?? offer.highPrice;
+        if (rawPrice != null) {
+          const num = parseFloat(String(rawPrice).replace(/[^0-9.]/g, ''));
+          if (Number.isFinite(num) && num > 0 && num <= 100000) return num;
+        }
+      }
+    }
+  }
+  if (obj['@graph']) return extractPriceFromSchemaObjectLocal(obj['@graph']);
+  return null;
 }
