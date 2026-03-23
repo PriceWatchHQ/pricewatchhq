@@ -322,8 +322,10 @@ export async function scrapePriceAndStockWithFallback(url, usePlaywright = false
     }
   }
 
-  // Retail-specific stealth scraper (Walmart, Best Buy, Target)
-  if (usePlaywright && isRetailUrl(url)) {
+  // Retail-specific stealth scraper (Walmart, Best Buy, Target, Amazon)
+  // Amazon always tries retail scraper — ScraperAPI tier is cheap (no browser) and most reliable
+  const isAmazon = /amazon\.com/i.test(url);
+  if ((usePlaywright || isAmazon) && isRetailUrl(url)) {
     console.log(`[scraper] HTTP scraper returned no price for ${url}, trying retail stealth scraper...`);
     try {
       const retailResult = await scrapePriceAndStockRetail(url);
