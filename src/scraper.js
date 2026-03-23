@@ -1,13 +1,11 @@
 import { load } from 'cheerio';
-import fetch from 'node-fetch';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { get as wreqGet } from 'wreq-js';
 import { scrapePriceAndStockHeadless } from './scraper-headless.js';
 import { scrapePriceAndStockPlaywright } from './scraper-playwright.js';
 import { scrapePriceAndStockRetail, isRetailUrl } from './scraper-retail.js';
 
-// DataImpulse residential proxy
+// DataImpulse residential proxy (passed to wreq-js when set)
 const PROXY_URL = process.env.PROXY_URL || null;
-const proxyAgent = PROXY_URL ? new HttpsProxyAgent(PROXY_URL) : null;
 
 const PRICE_SELECTORS = [
   '[itemprop="price"]',
@@ -36,10 +34,11 @@ const USER_AGENT =
  * Returns the numeric price or null if nothing matched.
  */
 export async function scrapePrice(url) {
-  const res = await fetch(url, {
-    headers: { 'User-Agent': USER_AGENT },
-    timeout: 15_000,
-    ...(proxyAgent ? { agent: proxyAgent } : {}),
+  const res = await wreqGet(url, {
+    browser: 'chrome_131',
+    os: 'windows',
+    headers: { 'accept-language': 'en-US,en;q=0.9' },
+    ...(PROXY_URL ? { proxy: PROXY_URL } : {}),
   });
 
   if (!res.ok) {
@@ -73,9 +72,11 @@ export async function scrapePrice(url) {
 export async function scrapeStockStatus(url, existingHtml) {
   let html = existingHtml;
   if (!html) {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
-      timeout: 15_000,
+    const res = await wreqGet(url, {
+      browser: 'chrome_131',
+      os: 'windows',
+      headers: { 'accept-language': 'en-US,en;q=0.9' },
+      ...(PROXY_URL ? { proxy: PROXY_URL } : {}),
     });
     if (!res.ok) {
       throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
@@ -162,10 +163,11 @@ export async function scrapeStockStatus(url, existingHtml) {
  * Returns { price, stockStatus }.
  */
 export async function scrapePriceAndStock(url) {
-  const res = await fetch(url, {
-    headers: { 'User-Agent': USER_AGENT },
-    timeout: 15_000,
-    ...(proxyAgent ? { agent: proxyAgent } : {}),
+  const res = await wreqGet(url, {
+    browser: 'chrome_131',
+    os: 'windows',
+    headers: { 'accept-language': 'en-US,en;q=0.9' },
+    ...(PROXY_URL ? { proxy: PROXY_URL } : {}),
   });
 
   if (!res.ok) {
