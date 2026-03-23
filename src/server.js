@@ -396,15 +396,15 @@ app.get('/admin/scrape-nulls', async (req, reply) => {
           ({ price, stockStatus } = await scrapePriceAndStock(entry.url));
         }
         if (price !== null) {
-          db.prepare('UPDATE watched_urls SET last_price=?, last_stock_status=?, last_checked_at=datetime('now'), fail_count=0 WHERE id=?').run(price, stockStatus, entry.id);
-          db.prepare('INSERT INTO price_history (watched_url_id, price, recorded_at) VALUES (?,?,datetime('now'))').run(entry.id, price);
+          db.prepare("UPDATE watched_urls SET last_price=?, last_stock_status=?, last_checked_at=datetime('now'), fail_count=0 WHERE id=?").run(price, stockStatus, entry.id);
+          db.prepare("INSERT INTO price_history (watched_url_id, price, recorded_at) VALUES (?,?,datetime('now'))").run(entry.id, price);
           console.log('[scrape-nulls] ✓', entry.label, price);
         } else {
-          db.prepare('UPDATE watched_urls SET fail_count=fail_count+1, last_checked_at=datetime('now') WHERE id=?').run(entry.id);
+          db.prepare("UPDATE watched_urls SET fail_count=fail_count+1, last_checked_at=datetime('now') WHERE id=?").run(entry.id);
           console.log('[scrape-nulls] ✗', entry.label, 'no price');
         }
       } catch(e) {
-        db.prepare('UPDATE watched_urls SET fail_count=fail_count+1, last_checked_at=datetime('now') WHERE id=?').run(entry.id);
+        db.prepare("UPDATE watched_urls SET fail_count=fail_count+1, last_checked_at=datetime('now') WHERE id=?").run(entry.id);
         console.log('[scrape-nulls] ✗', entry.label, e.message.slice(0,60));
       }
       await new Promise(r => setTimeout(r, 500));
