@@ -36,7 +36,7 @@ jobs:
           git config user.email "ci@pricewatchhq.com"
           git fetch origin master
           git checkout master
-          git merge staging --no-ff -m "ci: auto-merge staging → master (health checks passed)"
+          git merge staging --no-ff --allow-unrelated-histories -m "ci: auto-merge staging → master (health checks passed)"
           git push origin master
           echo "✅ Staging checks passed — merged to master"
 # Mon Mar 23 00:52:46 CDT 2026
