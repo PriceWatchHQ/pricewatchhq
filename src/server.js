@@ -360,6 +360,18 @@ app.get('/admin/seed-demo', async (req, reply) => {
   return reply.send({ success: true, message: 'Demo seeded', userId: demo.id, urlCount: added });
 });
 
+// Admin: check any user's URL status by email
+app.get('/admin/user-status', async (req, reply) => {
+  const { secret, email } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  const user = db.prepare('SELECT id, email, plan FROM users WHERE email=?').get(email || '');
+  if (!user) return reply.send({ error: 'User not found' });
+  const urls = db.prepare('SELECT id, label, url, last_price, last_stock_status, last_checked_at, fail_count, url_status FROM watched_urls WHERE user_id=? ORDER BY id').all(user.id);
+  const nullCount = urls.filter(u => u.last_price === null).length;
+  return reply.send({ user, urlCount: urls.length, nullPriceCount: nullCount, urls });
+});
+
 // Temp admin: demo account status check
 // Admin: reset all unavailable retail URLs back to active
 app.get('/admin/reset-unavailable', async (req, reply) => {
