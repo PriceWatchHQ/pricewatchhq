@@ -11,6 +11,11 @@ const PROXY_URL = process.env.PROXY_URL || null;
 const PRICE_SELECTORS = [
   '[itemprop="price"]',
   '[data-price]',
+  // Amazon: .a-price .a-offscreen has the screen-reader full price string (e.g. "$49.99")
+  // MUST come before generic [class*="price"] which would match .a-price and return
+  // concatenated text like "$49.99$49.99" → parsed as a number > 100000 → rejected
+  '#corePrice_feature_div .a-price .a-offscreen',
+  '.a-price .a-offscreen',
   '.price',
   '[class*="price"]',
   '[class*="Price"]',
@@ -73,11 +78,13 @@ export async function scrapePrice(url) {
 export async function scrapeStockStatus(url, existingHtml) {
   let html = existingHtml;
   if (!html) {
+    // Amazon: skip proxy — non-US IPs cause Amazon to hide buy box (see scrapePriceAndStock)
+    const isAmazon = /amazon\.com/i.test(url);
     const res = await wreqGet(url, {
       browser: 'chrome_131',
       os: 'windows',
       headers: { 'accept-language': 'en-US,en;q=0.9' },
-      ...(PROXY_URL ? { proxy: PROXY_URL } : {}),
+      ...(PROXY_URL && !isAmazon ? { proxy: PROXY_URL } : {}),
     });
     if (!res.ok) {
       throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
@@ -164,11 +171,15 @@ export async function scrapeStockStatus(url, existingHtml) {
  * Returns { price, stockStatus }.
  */
 export async function scrapePriceAndStock(url) {
+  // Amazon requires a US IP — DataImpulse proxy often provides non-US IPs which causes
+  // Amazon to serve a "cannot ship to your location" page without the buy box/price.
+  // Skip the proxy for Amazon to get direct US IP requests.
+  const isAmazon = /amazon\.com/i.test(url);
   const res = await wreqGet(url, {
     browser: 'chrome_131',
     os: 'windows',
     headers: { 'accept-language': 'en-US,en;q=0.9' },
-    ...(PROXY_URL ? { proxy: PROXY_URL } : {}),
+    ...(PROXY_URL && !isAmazon ? { proxy: PROXY_URL } : {}),
   });
 
   if (!res.ok) {
