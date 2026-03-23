@@ -444,6 +444,23 @@ app.post('/admin/write-price', async (req, reply) => {
   return reply.send({ success: true, id, price });
 });
 
+
+// Admin: run price audit manually
+app.get('/admin/run-audit', async (req, reply) => {
+  const { secret } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  reply.send({ success: true, message: 'Audit started in background' });
+  setImmediate(async () => {
+    try {
+      const { runAudit } = await import('./auditor.js');
+      const result = await runAudit();
+      console.log('[admin] Manual audit complete:', JSON.stringify(result));
+    } catch(err) {
+      console.error('[admin] Audit error:', err.message);
+    }
+  });
+});
+
 // Admin: test scrape a single URL directly
 app.get('/admin/test-scrape', async (req, reply) => {
   const { secret, url } = req.query;

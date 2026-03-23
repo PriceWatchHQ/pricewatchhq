@@ -248,3 +248,17 @@ async function processUrl({ entry, plan, useHeadless, usePlaywright }) {
     console.error(`[scheduler] Error scraping ${entry.url}:`, err.message);
   }
 }
+
+// Daily price audit — runs at 6am CT every day
+cron.schedule('0 11 * * *', async () => {  // 11 UTC = 6am CDT
+  console.log('[scheduler] Starting daily price audit...');
+  try {
+    const { runAudit } = await import('./auditor.js');
+    const result = await runAudit();
+    console.log('[scheduler] Audit complete:', result);
+  } catch (err) {
+    console.error('[scheduler] Audit failed:', err.message);
+  }
+}, { timezone: 'UTC' });
+
+console.log('[scheduler] Daily audit scheduled (6am CT).');
