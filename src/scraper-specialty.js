@@ -333,10 +333,22 @@ function extractHomeDepotApolloPrice(html) {
     if (!pricingKey) return null;
 
     const pricing = product[pricingKey];
-    const value = pricing?.value;
-    if (typeof value === 'number' && value > 0 && value <= 100000) return value;
-
-    return parsePrice(value);
+    
+    // Check for sale/special price first, then fall back to regular price
+    // HD stores: specialBuyPrice, promotionPrice, value (regular)
+    const candidates = [
+      pricing?.specialBuyPrice,
+      pricing?.promotionPrice, 
+      pricing?.alternatePriceDisplay,
+      pricing?.value,
+    ].filter(v => v != null);
+    
+    for (const candidate of candidates) {
+      const p = typeof candidate === 'number' ? candidate : parsePrice(String(candidate));
+      if (p !== null && p > 0 && p < 100000) return p;
+    }
+    
+    return null;
   } catch {
     return null;
   }
