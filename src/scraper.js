@@ -282,7 +282,12 @@ function extractPriceFromSchemaObject(obj) {
  * Returns { price, stockStatus }.
  */
 export async function scrapePriceAndStockWithFallback(url, usePlaywright = false) {
-  const httpResult = await scrapePriceAndStock(url);
+  let httpResult = { price: null, stockStatus: null };
+  try {
+    httpResult = await scrapePriceAndStock(url);
+  } catch (err) {
+    console.log(`[scraper] HTTP scraper failed for ${url}: ${err.message}`);
+  }
 
   if (httpResult.price !== null) {
     console.log(`[scraper] HTTP scraper succeeded for ${url}`);
@@ -345,10 +350,12 @@ export async function scrapePriceAndStockWithFallback(url, usePlaywright = false
   try {
     const headlessResult = await scrapePriceAndStockHeadless(url);
     console.log(`[scraper] Headless scraper result for ${url}: price=${headlessResult.price}, stock=${headlessResult.stockStatus}`);
-    return {
-      price: headlessResult.price,
-      stockStatus: headlessResult.stockStatus ?? httpResult.stockStatus,
-    };
+    if (headlessResult.price !== null) {
+      return {
+        price: headlessResult.price,
+        stockStatus: headlessResult.stockStatus ?? httpResult.stockStatus,
+      };
+    }
   } catch (err) {
     console.error(`[scraper] Headless scraper failed for ${url}:`, err.message);
   }
