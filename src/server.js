@@ -361,6 +361,17 @@ app.get('/admin/seed-demo', async (req, reply) => {
 });
 
 // Temp admin: demo account status check
+// Admin: reset all unavailable retail URLs back to active
+app.get('/admin/reset-unavailable', async (req, reply) => {
+  const { secret } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  const result = db.prepare(
+    "UPDATE watched_urls SET url_status='active', fail_count=0 WHERE url_status='unavailable' AND (url LIKE '%walmart%' OR url LIKE '%bestbuy%' OR url LIKE '%target%')"
+  ).run();
+  return reply.send({ success: true, reset: result.changes });
+});
+
 app.get('/admin/demo-status', async (req, reply) => {
   const { secret } = req.query;
   if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });

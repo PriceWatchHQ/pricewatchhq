@@ -108,16 +108,19 @@ async function processUrl({ entry, plan, useHeadless, usePlaywright }) {
 
         if (price === null && stockStatus === null) {
           const newFailCount = (entry.fail_count || 0) + 1;
-          console.log(`[scheduler] No price or stock found for ${entry.url} (fail ${newFailCount}/3)`);
-          // After 5 consecutive failures, mark as unavailable
-          if (newFailCount >= 5) {
+          console.log(`[scheduler] No price or stock found for ${entry.url} (fail ${newFailCount})`);
+          // Retail URLs (Walmart, Best Buy, Target) get bot-blocked frequently — never mark unavailable,
+          // just keep retrying with last known price still displayed
+          const isRetail = /walmart\.com|bestbuy\.com|target\.com/i.test(entry.url);
+          if (!isRetail && newFailCount >= 5) {
             db.prepare(
               `UPDATE watched_urls SET fail_count = ?, url_status = 'unavailable', last_checked_at = datetime('now') WHERE id = ?`
             ).run(newFailCount, entry.id);
-            console.log(`[scheduler] Marked ${entry.url} as unavailable after 3 failures`);
+            console.log(`[scheduler] Marked ${entry.url} as unavailable after ${newFailCount} failures`);
           } else {
+            // For retail URLs or non-retail under threshold: just increment fail count, keep active
             db.prepare(
-              `UPDATE watched_urls SET fail_count = ?, last_checked_at = datetime('now') WHERE id = ?`
+              `UPDATE watched_urls SET fail_count = ?, url_status = 'active', last_checked_at = datetime('now') WHERE id = ?`
             ).run(newFailCount, entry.id);
           }
           return;
