@@ -374,6 +374,45 @@ app.get('/admin/user-status', async (req, reply) => {
 
 
 
+
+// Admin: scrape only null-price items for a specific user
+app.get('/admin/scrape-nulls', async (req, reply) => {
+  const { secret, email } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  const user = db.prepare('SELECT id FROM users WHERE email=?').get(email || '');
+  if (!user) return reply.send({ error: 'User not found' });
+  const nullItems = db.prepare('SELECT * FROM watched_urls WHERE user_id=? AND last_price IS NULL').all(user.id);
+  reply.send({ success: true, message: 'Scraping nulls in background', count: nullItems.length });
+  setImmediate(async () => {
+    const { scrapePriceAndStock } = await import('./scraper.js');
+    const { isRetailUrl, scrapePriceAndStockRetail } = await import('./scraper-retail.js');
+    for (const entry of nullItems) {
+      try {
+        let price, stockStatus;
+        if (isRetailUrl(entry.url)) {
+          ({ price, stockStatus } = await scrapePriceAndStockRetail(entry.url));
+        } else {
+          ({ price, stockStatus } = await scrapePriceAndStock(entry.url));
+        }
+        if (price !== null) {
+          db.prepare('UPDATE watched_urls SET last_price=?, last_stock_status=?, last_checked_at=datetime('now'), fail_count=0 WHERE id=?').run(price, stockStatus, entry.id);
+          db.prepare('INSERT INTO price_history (watched_url_id, price, recorded_at) VALUES (?,?,datetime('now'))').run(entry.id, price);
+          console.log('[scrape-nulls] ✓', entry.label, price);
+        } else {
+          db.prepare('UPDATE watched_urls SET fail_count=fail_count+1, last_checked_at=datetime('now') WHERE id=?').run(entry.id);
+          console.log('[scrape-nulls] ✗', entry.label, 'no price');
+        }
+      } catch(e) {
+        db.prepare('UPDATE watched_urls SET fail_count=fail_count+1, last_checked_at=datetime('now') WHERE id=?').run(entry.id);
+        console.log('[scrape-nulls] ✗', entry.label, e.message.slice(0,60));
+      }
+      await new Promise(r => setTimeout(r, 500));
+    }
+    console.log('[scrape-nulls] Done for', nullItems.length, 'items');
+  });
+});
+
 // Admin: reset last_checked_at for all null-price URLs so scheduler retries them
 app.get('/admin/reset-null-prices', async (req, reply) => {
   const { secret, email } = req.query;
