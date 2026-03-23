@@ -29,12 +29,10 @@ jobs:
 
       - name: Auto-merge to master if checks pass
         if: success()
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git config user.name "Logan CI"
           git config user.email "ci@pricewatchhq.com"
-          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/PriceWatchHQ/pricewatchhq.git
+          git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/PriceWatchHQ/pricewatchhq.git
           git fetch origin master
           git checkout master
           git merge staging --no-ff --allow-unrelated-histories -m "ci: auto-merge staging → master (health checks passed)"
