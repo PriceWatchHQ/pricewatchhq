@@ -1,0 +1,42 @@
+name: Staging Health Check
+
+on:
+  push:
+    branches:
+      - staging
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    name: Run health checks on staging
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Wait for Railway staging deploy
+        run: |
+          echo "Waiting 90s for Railway to deploy..."
+          sleep 90
+
+      - name: Run health checks
+        run: node scripts/health-check.js "${{ secrets.STAGING_URL || 'https://innovative-curiosity-staging.up.railway.app' }}"
+
+      - name: Auto-merge to master if checks pass
+        if: success()
+        run: |
+          git config user.name "Logan CI"
+          git config user.email "ci@pricewatchhq.com"
+          git checkout master
+          git merge staging --no-ff --allow-unrelated-histories -m "ci: auto-merge staging -> master (health checks passed)"
+          git push
+          echo "Staging checks passed - merged to master"
