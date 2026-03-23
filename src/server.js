@@ -484,16 +484,28 @@ app.get('/admin/force-scrape', async (req, reply) => {
   reply.send({ success: true, message: 'Scrape started in background', total: urls.length });
   // Run scrape after reply
   setImmediate(async () => {
-    const { scrapePriceAndStock } = await import('./scraper.js');
+    const { scrapePriceAndStock, scrapePriceAndStockWithFallback } = await import('./scraper.js');
+    const { isRetailUrl, scrapePriceAndStockRetail } = await import('./scraper-retail.js');
     for (const entry of urls) {
       try {
-        const { price, stockStatus } = await scrapePriceAndStock(entry.url);
-        if (price !== null || stockStatus !== null) {
-          db.prepare('UPDATE watched_urls SET last_price = COALESCE(?, last_price), last_stock_status = COALESCE(?, last_stock_status), last_checked_at = datetime("now") WHERE id = ?')
+        let price, stockStatus;
+        if (isRetailUrl(entry.url)) {
+          ({ price, stockStatus } = await scrapePriceAndStockRetail(entry.url));
+        } else {
+          ({ price, stockStatus } = await scrapePriceAndStock(entry.url));
+        }
+        if (price !== null) {
+          db.prepare('UPDATE watched_urls SET last_price=?, last_stock_status=COALESCE(?,last_stock_status), last_checked_at=datetime("now"), fail_count=0 WHERE id=?')
             .run(price, stockStatus, entry.id);
+          db.prepare('INSERT INTO price_history (watched_url_id, price, recorded_at) VALUES (?,?,datetime("now"))').run(entry.id, price);
+          console.log('[force-scrape] ✓', entry.id, price, entry.url.slice(0,50));
+        } else {
+          db.prepare('UPDATE watched_urls SET fail_count=fail_count+1, last_checked_at=datetime("now") WHERE id=?').run(entry.id);
+          console.log('[force-scrape] ✗', entry.id, entry.url.slice(0,50));
         }
       } catch (e) {
-        console.error('[force-scrape] Error on', entry.url, e.message);
+        db.prepare('UPDATE watched_urls SET fail_count=fail_count+1, last_checked_at=datetime("now") WHERE id=?').run(entry.id);
+        console.error('[force-scrape] Error', entry.id, e.message.slice(0,60));
       }
     }
     console.log('[force-scrape] Complete for', urls.length, 'URLs');
