@@ -31,6 +31,18 @@ jobs:
       - name: Run health checks
         run: node scripts/health-check.js "${{ secrets.STAGING_URL || 'https://innovative-curiosity-staging.up.railway.app' }}"
 
+      - name: Run scraper regression tests
+        run: |
+          cd /home/runner/work/pricewatchhq/pricewatchhq
+          npm install
+          node --experimental-vm-modules scripts/scraper-tests.js
+        env:
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+          ZENROWS_KEY: ${{ secrets.ZENROWS_KEY }}
+          BESTBUY_API_KEY: ${{ secrets.BESTBUY_API_KEY }}
+        timeout-minutes: 10
+        continue-on-error: true
+
       - name: Auto-merge to master if checks pass
         if: success()
         run: |
