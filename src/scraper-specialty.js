@@ -6,6 +6,8 @@
  * - Home Depot: ZenRows + Apollo state extraction
  * - Lowes: ZenRows without wait param + JSON-LD
  * - Michaels: wreq-js direct fetch + JSON-LD (handled by generic scraper)
+ * - Hobby Lobby: wreq-js + __NEXT_DATA__ extraction (Next.js SSG, no browser needed)
+ * - Menards: ZenRows + JSON-LD / CSS selectors (Imperva/Incapsula)
  */
 
 import { load } from 'cheerio';
@@ -24,6 +26,8 @@ const SPECIALTY_DOMAINS = {
   homedepot: { match: (url) => /homedepot\.com/i.test(url) },
   lowes: { match: (url) => /lowes\.com/i.test(url) },
   michaels: { match: (url) => /michaels\.com/i.test(url) },
+  hobbylobby: { match: (url) => /hobbylobby\.com/i.test(url) },
+  menards: { match: (url) => /menards\.com/i.test(url) },
 };
 
 function detectSpecialty(url) {
@@ -53,6 +57,8 @@ export async function scrapePriceAndStockSpecialty(url) {
     homedepot: scrapeHomeDepot,
     lowes: scrapeLowes,
     michaels: scrapeMichaels,
+    hobbylobby: scrapeHobbyLobby,
+    menards: scrapeMenards,
   };
 
   try {
@@ -459,4 +465,152 @@ async function scrapeMichaels(url) {
 
   const stockStatus = detectStockFromHtml(html);
   return { price: finalPrice, stockStatus };
+}
+
+// ---------------------------------------------------------------------------
+// Hobby Lobby — wreq-js + __NEXT_DATA__ extraction.
+// Next.js SSG site: full product data (price, stock) is embedded in the
+// __NEXT_DATA__ JSON blob in the initial HTML. No browser needed.
+// JSON-LD has price but lacks availability, so __NEXT_DATA__ is primary.
+// ---------------------------------------------------------------------------
+
+function extractNextDataPayload(html) {
+  const marker = '<script id="__NEXT_DATA__" type="application/json">';
+  const startIdx = html.indexOf(marker);
+  if (startIdx === -1) return null;
+
+  const jsonStart = startIdx + marker.length;
+  const jsonEnd = html.indexOf('</script>', jsonStart);
+  if (jsonEnd === -1) return null;
+
+  try {
+    return JSON.parse(html.slice(jsonStart, jsonEnd));
+  } catch {
+    return null;
+  }
+}
+
+function findNestedValue(obj, key, maxDepth = 10) {
+  if (!obj || typeof obj !== 'object' || maxDepth <= 0) return undefined;
+  if (key in obj) return obj[key];
+  for (const v of Object.values(obj)) {
+    const found = findNestedValue(v, key, maxDepth - 1);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+async function scrapeHobbyLobby(url) {
+  const res = await wreqGet(url, {
+    browser: 'chrome_131',
+    os: 'windows',
+    headers: { 'accept-language': 'en-US,en;q=0.9' },
+  });
+
+  if (!res.ok) throw new Error(`Hobby Lobby returned ${res.status}`);
+
+  const html = await res.text();
+
+  let price = null;
+  let stockStatus = null;
+
+  // Priority 1: __NEXT_DATA__ (has both price and stock)
+  const nextData = extractNextDataPayload(html);
+  if (nextData) {
+    const variantPrice = findNestedValue(nextData, 'variantPrice');
+    if (variantPrice != null) {
+      const p = typeof variantPrice === 'number' ? variantPrice : parsePrice(String(variantPrice));
+      if (p !== null) price = p;
+    }
+
+    // Fallback price fields in __NEXT_DATA__
+    if (price === null) {
+      for (const key of ['price', 'salePrice', 'listPrice']) {
+        const val = findNestedValue(nextData, key);
+        if (val != null) {
+          const p = typeof val === 'number' ? val : parsePrice(String(val));
+          if (p !== null) { price = p; break; }
+        }
+      }
+    }
+
+    const inStock = findNestedValue(nextData, 'inStock');
+    if (typeof inStock === 'boolean') {
+      stockStatus = inStock ? 'in_stock' : 'out_of_stock';
+    }
+  }
+
+  // Priority 2: JSON-LD fallback (has price but no availability)
+  if (price === null) {
+    price = extractJsonLdPrice(html);
+  }
+
+  // Priority 3: Stock from HTML if __NEXT_DATA__ didn't have it
+  if (stockStatus === null) {
+    stockStatus = detectStockFromHtml(html);
+  }
+
+  console.log(`[scraper-specialty] Hobby Lobby: price=$${price}, stock=${stockStatus}`);
+  return { price, stockStatus };
+}
+
+// ---------------------------------------------------------------------------
+// Menards — ZenRows + JSON-LD / CSS selector extraction.
+// Imperva/Incapsula bot protection blocks direct HTTP and browser requests.
+// ZenRows with antibot bypasses Incapsula server-side.
+// Menards product pages are SSR with JSON-LD Product schema when served
+// past the bot wall, so js_render is not needed (saves cost).
+// ---------------------------------------------------------------------------
+
+async function scrapeMenards(url) {
+  const html = await zenrowsFetch(url, { jsRender: false, antibot: true, retries: 3, minSize: 5000 });
+
+  if (html.length < 5000) {
+    console.log(`[scraper-specialty] Menards: response too small (${html.length} bytes)`);
+    return { price: null, stockStatus: null };
+  }
+
+  // Check if we still got the Incapsula challenge page
+  if (/Pardon Our Interruption|Incapsula/i.test(html)) {
+    console.log(`[scraper-specialty] Menards: still blocked by Incapsula, trying with js_render`);
+    const jsHtml = await zenrowsFetch(url, { jsRender: true, antibot: true, wait: 5000, retries: 2, minSize: 5000 });
+    return extractMenardsData(jsHtml);
+  }
+
+  return extractMenardsData(html);
+}
+
+function extractMenardsData(html) {
+  const $ = load(html);
+
+  // Priority 1: JSON-LD structured data
+  let price = extractJsonLdPrice(html);
+
+  // Priority 2: Menards-specific price selectors
+  if (price === null) {
+    const priceSelectors = [
+      '#defined-price',
+      '.price-each-value',
+      '[id*="price"]',
+      '.sale-price',
+      '.regular-price',
+      '[class*="price"] span',
+    ];
+    for (const sel of priceSelectors) {
+      const el = $(sel).first();
+      if (!el.length) continue;
+      const p = parsePrice(el.attr('content') || el.text());
+      if (p !== null) { price = p; break; }
+    }
+  }
+
+  // Priority 3: og:price meta tag
+  if (price === null) {
+    price = parsePrice($('meta[property="og:price:amount"], meta[property="product:price:amount"]').attr('content'));
+  }
+
+  const stockStatus = detectStockFromHtml(html);
+
+  console.log(`[scraper-specialty] Menards: price=$${price}, stock=${stockStatus}`);
+  return { price, stockStatus };
 }

@@ -56,6 +56,17 @@ const TESTS = [
       if (r.price < 50 || r.price > 500) throw new Error(`Price $${r.price} out of expected range for a scope`);
     }
   },
+  // ---- Hobby Lobby ----
+  {
+    name: 'Hobby Lobby: returns price via __NEXT_DATA__',
+    url: 'https://www.hobbylobby.com/art-supplies/art-sets/mixed-media-art-set---143-piece-set/p/80930712',
+    fn: scrapePriceAndStockSpecialty,
+    assert: (r) => {
+      if (r.price === null) throw new Error('No price returned — __NEXT_DATA__ extraction broken');
+      if (r.price < 20 || r.price > 200) throw new Error(`Price $${r.price} out of expected range $20-$200`);
+      if (r.stockStatus === null) throw new Error('No stock status — inStock field missing from __NEXT_DATA__');
+    }
+  },
   // ---- Amazon ----
   {
     name: 'Amazon: returns price for Echo Spot',
