@@ -539,6 +539,29 @@ app.get('/admin/run-poster', async (req, reply) => {
   }
 });
 
+// Admin: deduplicate all pending posts — keeps lowest id for each unique text
+app.get('/admin/dedup-posts', async (req, reply) => {
+  const { secret } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  const pending = db.prepare('SELECT id, text FROM scheduled_posts WHERE posted = 0 ORDER BY id ASC').all();
+  const seen = new Map();
+  const toSkip = [];
+  for (const p of pending) {
+    const key = p.text.trim();
+    if (seen.has(key)) {
+      toSkip.push(p.id);
+    } else {
+      seen.set(key, p.id);
+    }
+  }
+  const now = Date.now();
+  for (const id of toSkip) {
+    db.prepare('UPDATE scheduled_posts SET posted = 1, posted_at = ?, tweet_id = ? WHERE id = ?').run(now, 'skipped-dedup', id);
+  }
+  return reply.send({ ok: true, skipped: toSkip, remaining: pending.length - toSkip.length });
+});
+
 // Admin: mark duplicate posts as posted (skip them) so queue can advance
 app.post('/admin/skip-posts', async (req, reply) => {
   const { secret } = req.query;
