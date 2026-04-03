@@ -5,12 +5,12 @@
  *
  * - GameStop: wreq-js + JSON-LD first → ZenRows fallback (Cloudflare Turnstile)
  * - Hy-Vee: Direct GraphQL API (no auth needed, always free)
- * - TJ Maxx: quickview.jsp endpoint via wreq-js (bypasses Kasada, always free)
+ * - TJ Maxx: Unsupported without ZenRows (Kasada-protected, no reliable free path)
  * - Home Depot: wreq-js + Apollo state/JSON-LD first → ZenRows fallback
  * - Lowes: wreq-js + JSON-LD first → ZenRows fallback
  * - Michaels: wreq-js + JSON-LD (always free)
  * - Hobby Lobby: wreq-js + __NEXT_DATA__ (always free)
- * - Menards: wreq-js + proxy first → ZenRows fallback (Imperva/Incapsula)
+ * - Menards: Unsupported without ZenRows (Imperva/Incapsula-protected, no reliable free path)
  */
 
 import { load } from 'cheerio';
@@ -46,10 +46,7 @@ export function isSpecialtyUrl(url) {
 
 // Domains that cannot be scraped without ZenRows (no free method works).
 // When failCount >= 3 and ZENROWS_KEY is not set, these get marked unavailable.
-export const UNSUPPORTED_WITHOUT_ZENROWS = [
-  // Add domains here if free methods prove permanently unreliable.
-  // Currently all specialty domains have a free-tier attempt.
-];
+export const UNSUPPORTED_WITHOUT_ZENROWS = ['tjmaxx', 'menards'];
 
 /**
  * Main entry point — routes to the right specialty scraper.
@@ -290,65 +287,12 @@ async function scrapeHyVee(url) {
 }
 
 // ---------------------------------------------------------------------------
-// TJ Maxx — quickview.jsp endpoint bypasses Kasada bot protection entirely.
-// Returns TJXdata.productData JS object with full product payload.
+// TJ Maxx — Unsupported without ZenRows (Kasada-protected, no reliable free path)
 // ---------------------------------------------------------------------------
 
-function extractTJMaxxProductId(url) {
-  const match = url.match(/\/(\d{10,})$/);
-  return match ? match[1] : null;
-}
-
 async function scrapeTJMaxx(url) {
-  const productId = extractTJMaxxProductId(url);
-  if (!productId) throw new Error(`Cannot extract TJ Maxx product ID from ${url}`);
-
-  const quickviewUrl = `https://tjmaxx.tjx.com/store/modal/quickview.jsp?productId=${productId}`;
-
-  const res = await wreqGet(quickviewUrl, {
-    browser: 'chrome_131',
-    os: 'windows',
-    headers: {
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.5',
-    },
-  });
-
-  if (!res.ok) throw new Error(`TJ Maxx quickview returned ${res.status}`);
-
-  const html = await res.text();
-
-  // Extract TJXdata.productData JSON from inline script
-  // Format: TJXdata.productData = {"prodId":{...nested...}}; — deeply nested, use bracket counting
-  const marker = 'TJXdata.productData';
-  const markerIdx = html.indexOf(marker);
-  if (markerIdx === -1) throw new Error('TJ Maxx: TJXdata.productData not found');
-
-  const jsonStart = html.indexOf('{', markerIdx);
-  if (jsonStart === -1) throw new Error('TJ Maxx: no JSON after productData marker');
-
-  let depth = 0;
-  let jsonEnd = jsonStart;
-  for (let i = jsonStart; i < html.length; i++) {
-    if (html[i] === '{') depth++;
-    else if (html[i] === '}') { depth--; if (depth === 0) { jsonEnd = i + 1; break; } }
-  }
-
-  const rawJson = html.slice(jsonStart, jsonEnd);
-  const productDataMap = JSON.parse(rawJson);
-
-  // The map is keyed by product ID — get the first (and only) entry
-  const productData = productDataMap[productId] || Object.values(productDataMap)[0];
-  if (!productData) throw new Error('TJ Maxx: product not found in productData');
-
-  const price = parsePrice(productData.price);
-
-  // Stock: check prdQuantity or sku quantities
-  const qty = parseInt(productData.prdQuantity, 10);
-  const stockStatus = qty > 0 ? 'in_stock' : 'out_of_stock';
-
-  console.log(`[scraper-specialty] TJ Maxx: ${productData.name} = $${price} (qty=${qty})`);
-  return { price, stockStatus };
+  console.log(`[scraper-specialty] TJ Maxx: unsupported without ZenRows — ${url}`);
+  return { price: null, stockStatus: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -662,137 +606,10 @@ async function scrapeHobbyLobby(url) {
 }
 
 // ---------------------------------------------------------------------------
-// Menards — wreq-js + proxy (primary) → ZenRows fallback.
-// Imperva/Incapsula bot protection blocks direct HTTP requests, but
-// wreq-js with a residential proxy bypasses it reliably.
-// Price data lives in HTML-encoded Vue data attributes (salePrice/listPrice),
-// not in JSON-LD offers or standard CSS selectors.
+// Menards — Unsupported without ZenRows (Imperva/Incapsula-protected, no reliable free path)
 // ---------------------------------------------------------------------------
 
-const PROXY_URL = process.env.PROXY_URL || null;
-
-async function scrapeMenards(url, failCount = 0) {
-  let html = null;
-
-  // Tier 1: wreq-js + residential proxy (free, reliable)
-  if (PROXY_URL) {
-    try {
-      const res = await wreqGet(url, {
-        browser: 'chrome_131',
-        os: 'windows',
-        headers: { 'accept-language': 'en-US,en;q=0.9' },
-        proxy: PROXY_URL,
-      });
-      if (res.ok) {
-        const body = await res.text();
-        if (body.length > 20000 && !/Pardon Our Interruption/i.test(body)) {
-          html = body;
-          console.log(`[scraper-specialty] Menards: wreq-js+proxy succeeded (${html.length} bytes)`);
-        } else {
-          console.log(`[scraper-specialty] Menards: wreq-js+proxy got challenge page`);
-        }
-      } else {
-        console.log(`[scraper-specialty] Menards: wreq-js+proxy got ${res.status} ${res.statusText}`);
-      }
-    } catch (err) {
-      console.log(`[scraper-specialty] Menards: wreq-js+proxy failed: ${err.message}`);
-    }
-  }
-
-  // Tier 1b: wreq-js without proxy (worth a shot if no proxy configured)
-  if (!html && !PROXY_URL) {
-    try {
-      const res = await wreqGet(url, {
-        browser: 'chrome_131',
-        os: 'windows',
-        headers: { 'accept-language': 'en-US,en;q=0.9' },
-      });
-      if (res.ok) {
-        const body = await res.text();
-        if (body.length > 20000 && !/Pardon Our Interruption/i.test(body)) {
-          html = body;
-          console.log(`[scraper-specialty] Menards: wreq-js succeeded (${html.length} bytes)`);
-        }
-      } else {
-        console.log(`[scraper-specialty] Menards: wreq-js got ${res.status} ${res.statusText}`);
-      }
-    } catch (err) {
-      console.log(`[scraper-specialty] Menards: wreq-js failed: ${err.message}`);
-    }
-  }
-
-  // Tier 2: ZenRows — only if free methods failed AND failCount >= 3
-  if (!html && failCount >= 3 && ZENROWS_KEY) {
-    console.log(`[scraper-specialty] Menards: escalating to ZenRows (failCount=${failCount})`);
-    try {
-      html = await zenrowsFetch(url, { jsRender: false, antibot: true, retries: 3, minSize: 5000 });
-      if (html.length < 5000 || /Pardon Our Interruption|Incapsula/i.test(html)) {
-        console.log(`[scraper-specialty] Menards: ZenRows without js_render blocked, trying with js_render`);
-        html = await zenrowsFetch(url, { jsRender: true, antibot: true, wait: 5000, retries: 2, minSize: 5000 });
-      }
-    } catch (err) {
-      console.log(`[scraper-specialty] Menards: ZenRows failed: ${err.message}`);
-    }
-  } else if (!html && failCount < 3) {
-    console.log(`[scraper-specialty] Menards: skipping ZenRows (failCount=${failCount} < 3)`);
-  }
-
-  if (!html || html.length < 5000) {
-    console.log(`[scraper-specialty] Menards: all fetch methods failed`);
-    return { price: null, stockStatus: null };
-  }
-
-  return extractMenardsData(html);
-}
-
-function extractMenardsData(html) {
-  const $ = load(html);
-
-  let price = null;
-
-  // Priority 1: salePrice / listPrice from HTML-encoded Vue data attributes.
-  // Menards embeds product data in Vue component attrs as &quot;-encoded JSON.
-  // Decode entities and extract salePrice (preferred) or listPrice.
-  const decoded = html.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-  const saleMatch = decoded.match(/"salePrice"\s*:\s*([\d.]+)/);
-  if (saleMatch) {
-    price = parsePrice(saleMatch[1]);
-  }
-  if (price === null) {
-    const listMatch = decoded.match(/"listPrice"\s*:\s*([\d.]+)/);
-    if (listMatch) price = parsePrice(listMatch[1]);
-  }
-
-  // Priority 2: JSON-LD structured data (has availability but often no price)
-  if (price === null) {
-    price = extractJsonLdPrice(html);
-  }
-
-  // Priority 3: Menards-specific CSS selectors
-  if (price === null) {
-    const priceSelectors = [
-      '#defined-price',
-      '.price-each-value',
-      '[id*="price"]',
-      '.sale-price',
-      '.regular-price',
-      '[class*="price"] span',
-    ];
-    for (const sel of priceSelectors) {
-      const el = $(sel).first();
-      if (!el.length) continue;
-      const p = parsePrice(el.attr('content') || el.text());
-      if (p !== null) { price = p; break; }
-    }
-  }
-
-  // Priority 4: og:price meta tag
-  if (price === null) {
-    price = parsePrice($('meta[property="og:price:amount"], meta[property="product:price:amount"]').attr('content'));
-  }
-
-  const stockStatus = detectStockFromHtml(html);
-
-  console.log(`[scraper-specialty] Menards: price=$${price}, stock=${stockStatus}`);
-  return { price, stockStatus };
+async function scrapeMenards(url) {
+  console.log(`[scraper-specialty] Menards: unsupported without ZenRows — ${url}`);
+  return { price: null, stockStatus: null };
 }
