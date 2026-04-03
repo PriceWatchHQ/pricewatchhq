@@ -508,8 +508,35 @@ app.get('/admin/env-check', async (req, reply) => {
     PROXY_URL: process.env.PROXY_URL ? 'set (' + process.env.PROXY_URL.slice(0, 20) + '...)' : 'NOT SET',
     BESTBUY_API_KEY: process.env.BESTBUY_API_KEY ? 'set' : 'NOT SET',
     ZENROWS_KEY: process.env.ZENROWS_KEY ? 'set' : 'NOT SET',
+    X_CONSUMER_KEY: process.env.X_CONSUMER_KEY ? 'set' : 'NOT SET',
+    X_CONSUMER_SECRET: process.env.X_CONSUMER_SECRET ? 'set' : 'NOT SET',
+    X_ACCESS_TOKEN: process.env.X_ACCESS_TOKEN ? 'set' : 'NOT SET',
+    X_ACCESS_SECRET: process.env.X_ACCESS_SECRET ? 'set' : 'NOT SET',
     NODE_ENV: process.env.NODE_ENV,
   });
+});
+
+// Admin: check pending X posts and optionally trigger poster
+app.get('/admin/post-status', async (req, reply) => {
+  const { secret } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const db = getDb();
+  const pending = db.prepare('SELECT id, text, scheduled_for, posted_at FROM scheduled_posts WHERE posted = 0 ORDER BY scheduled_for ASC LIMIT 10').all();
+  const lastPosted = db.prepare('SELECT id, text, scheduled_for, posted_at FROM scheduled_posts WHERE posted = 1 ORDER BY posted_at DESC LIMIT 5').all();
+  return reply.send({ pending, lastPosted });
+});
+
+// Admin: manually trigger poster (post next due tweet)
+app.get('/admin/run-poster', async (req, reply) => {
+  const { secret } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const { runPoster } = await import('./poster.js');
+  try {
+    await runPoster();
+    return reply.send({ ok: true, message: 'Poster ran successfully' });
+  } catch (err) {
+    return reply.status(500).send({ ok: false, error: err.message });
+  }
 });
 
 // Admin: get domains needing scraper research
