@@ -64,13 +64,15 @@ export function schedulePost(text, scheduledFor) {
  */
 export async function runPoster() {
   const post = getNextPost();
-  if (!post) return;
+  if (!post) return { skipped: true, reason: 'no_pending' };
 
   try {
     const tweetId = await postTweet(post.text);
     markPosted(post.id, tweetId);
     console.log(`[poster] Posted tweet ${tweetId}: ${post.text.slice(0, 50)}...`);
+    return { posted: true, id: post.id, tweetId };
   } catch (err) {
     console.error(`[poster] Failed to post tweet:`, err.message);
+    return { posted: false, id: post.id, error: err.message };
   }
 }

@@ -532,11 +532,25 @@ app.get('/admin/run-poster', async (req, reply) => {
   if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
   const { runPoster } = await import('./poster.js');
   try {
-    await runPoster();
-    return reply.send({ ok: true, message: 'Poster ran successfully' });
+    const result = await runPoster();
+    return reply.send({ ok: true, result });
   } catch (err) {
     return reply.status(500).send({ ok: false, error: err.message });
   }
+});
+
+// Admin: mark duplicate posts as posted (skip them) so queue can advance
+app.post('/admin/skip-posts', async (req, reply) => {
+  const { secret } = req.query;
+  if (secret !== 'pwh_admin_2026') return reply.status(403).send({ error: 'Forbidden' });
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || ids.length === 0) return reply.status(400).send({ error: 'ids array required' });
+  const db = getDb();
+  const now = Date.now();
+  for (const id of ids) {
+    db.prepare('UPDATE scheduled_posts SET posted = 1, posted_at = ?, tweet_id = ? WHERE id = ?').run(now, 'skipped', id);
+  }
+  return reply.send({ ok: true, skipped: ids });
 });
 
 // Admin: get domains needing scraper research
