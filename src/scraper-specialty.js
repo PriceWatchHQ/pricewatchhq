@@ -691,6 +691,8 @@ async function scrapeMenards(url, failCount = 0) {
         } else {
           console.log(`[scraper-specialty] Menards: wreq-js+proxy got challenge page`);
         }
+      } else {
+        console.log(`[scraper-specialty] Menards: wreq-js+proxy got ${res.status} ${res.statusText}`);
       }
     } catch (err) {
       console.log(`[scraper-specialty] Menards: wreq-js+proxy failed: ${err.message}`);
@@ -711,6 +713,8 @@ async function scrapeMenards(url, failCount = 0) {
           html = body;
           console.log(`[scraper-specialty] Menards: wreq-js succeeded (${html.length} bytes)`);
         }
+      } else {
+        console.log(`[scraper-specialty] Menards: wreq-js got ${res.status} ${res.statusText}`);
       }
     } catch (err) {
       console.log(`[scraper-specialty] Menards: wreq-js failed: ${err.message}`);
