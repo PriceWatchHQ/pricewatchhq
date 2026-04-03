@@ -119,7 +119,8 @@ db.exec(`
     ('tjmaxx.tjx.com', 'supported', 'specialty', 'quickview.jsp via wreq-js'),
     ('homedepot.com', 'supported', 'specialty', 'ZenRows + Apollo state extraction'),
     ('lowes.com', 'supported', 'specialty', 'ZenRows + JSON-LD'),
-    ('michaels.com', 'supported', 'specialty', 'wreq-js direct + JSON-LD');
+    ('michaels.com', 'supported', 'specialty', 'wreq-js direct + JSON-LD'),
+    ('hobbylobby.com', 'supported', 'specialty', 'wreq-js + __NEXT_DATA__ / JSON-LD fallback');
 `);
 
 // Add billing columns to users if they don't exist (migrations)
