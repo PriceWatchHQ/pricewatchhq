@@ -1,13 +1,16 @@
 /**
- * Specialty scrapers for sites that need custom approaches:
- * - GameStop: ZenRows without js_render (Cloudflare Turnstile)
- * - Hy-Vee: Direct GraphQL API (no auth needed)
- * - TJ Maxx: quickview.jsp endpoint (bypasses Kasada)
- * - Home Depot: ZenRows + Apollo state extraction
- * - Lowes: ZenRows without wait param + JSON-LD
- * - Michaels: wreq-js direct fetch + JSON-LD (handled by generic scraper)
- * - Hobby Lobby: wreq-js + __NEXT_DATA__ extraction (Next.js SSG, no browser needed)
- * - Menards: ZenRows + JSON-LD / CSS selectors (Imperva/Incapsula)
+ * Specialty scrapers — free methods first, ZenRows only as paid last resort.
+ *
+ * Priority chain: wreq-js/plain HTTP → JSON-LD/structured data → ZenRows (failCount >= 3 only)
+ *
+ * - GameStop: wreq-js + JSON-LD first → ZenRows fallback (Cloudflare Turnstile)
+ * - Hy-Vee: Direct GraphQL API (no auth needed, always free)
+ * - TJ Maxx: quickview.jsp endpoint via wreq-js (bypasses Kasada, always free)
+ * - Home Depot: wreq-js + Apollo state/JSON-LD first → ZenRows fallback
+ * - Lowes: wreq-js + JSON-LD first → ZenRows fallback
+ * - Michaels: wreq-js + JSON-LD (always free)
+ * - Hobby Lobby: wreq-js + __NEXT_DATA__ (always free)
+ * - Menards: wreq-js + proxy first → ZenRows fallback (Imperva/Incapsula)
  */
 
 import { load } from 'cheerio';
@@ -41,10 +44,19 @@ export function isSpecialtyUrl(url) {
   return detectSpecialty(url) !== null;
 }
 
+// Domains that cannot be scraped without ZenRows (no free method works).
+// When failCount >= 3 and ZENROWS_KEY is not set, these get marked unavailable.
+export const UNSUPPORTED_WITHOUT_ZENROWS = [
+  // Add domains here if free methods prove permanently unreliable.
+  // Currently all specialty domains have a free-tier attempt.
+];
+
 /**
  * Main entry point — routes to the right specialty scraper.
+ * @param {string} url
+ * @param {number} failCount — consecutive failures so far; ZenRows only activates at >= 3
  */
-export async function scrapePriceAndStockSpecialty(url) {
+export async function scrapePriceAndStockSpecialty(url, failCount = 0) {
   url = url.split('#')[0]; // Strip # fragments, keep query params
 
   const site = detectSpecialty(url);
@@ -62,8 +74,8 @@ export async function scrapePriceAndStockSpecialty(url) {
   };
 
   try {
-    console.log(`[scraper-specialty] Routing ${url} to ${site} scraper`);
-    const result = await scrapers[site](url);
+    console.log(`[scraper-specialty] Routing ${url} to ${site} scraper (failCount=${failCount})`);
+    const result = await scrapers[site](url, failCount);
     console.log(`[scraper-specialty] ${site} result: price=${result.price}, stock=${result.stockStatus}`);
     return result;
   } catch (err) {
@@ -172,17 +184,51 @@ async function zenrowsFetch(url, { jsRender = false, antibot = true, wait = null
 // Without js_render, ZenRows solves the CF challenge server-side (~37s).
 // ---------------------------------------------------------------------------
 
-async function scrapeGameStop(url) {
+async function scrapeGameStop(url, failCount = 0) {
+  // Tier 1: wreq-js plain fetch — GameStop has JSON-LD on product pages
+  try {
+    const res = await wreqGet(url, {
+      browser: 'chrome_131',
+      os: 'windows',
+      headers: { 'accept-language': 'en-US,en;q=0.9' },
+    });
+    if (res.ok) {
+      const html = await res.text();
+      if (html.length >= 5000 && !/challenge|captcha|Attention Required/i.test(html)) {
+        const price = extractJsonLdPrice(html);
+        const stockStatus = detectStockFromHtml(html);
+        if (price !== null) {
+          console.log(`[scraper-specialty] GameStop: wreq-js succeeded`);
+          return { price, stockStatus };
+        }
+      } else {
+        console.log(`[scraper-specialty] GameStop: wreq-js got challenge/small page (${html.length} bytes)`);
+      }
+    }
+  } catch (err) {
+    console.log(`[scraper-specialty] GameStop: wreq-js failed: ${err.message}`);
+  }
+
+  // Tier 2: ZenRows — only if failCount >= 3
+  if (failCount < 3) {
+    console.log(`[scraper-specialty] GameStop: skipping ZenRows (failCount=${failCount} < 3)`);
+    return { price: null, stockStatus: null };
+  }
+  if (!ZENROWS_KEY) {
+    console.log(`[scraper-specialty] GameStop: ZENROWS_KEY not set, cannot escalate`);
+    return { price: null, stockStatus: null };
+  }
+
+  console.log(`[scraper-specialty] GameStop: escalating to ZenRows (failCount=${failCount})`);
   const html = await zenrowsFetch(url, { jsRender: false, antibot: true });
 
   if (html.length < 5000) {
-    console.log(`[scraper-specialty] GameStop: response too small (${html.length} bytes)`);
+    console.log(`[scraper-specialty] GameStop: ZenRows response too small (${html.length} bytes)`);
     return { price: null, stockStatus: null };
   }
 
   const price = extractJsonLdPrice(html);
   const stockStatus = detectStockFromHtml(html);
-
   return { price, stockStatus };
 }
 
@@ -362,28 +408,59 @@ function extractHomeDepotApolloPrice(html) {
   }
 }
 
-async function scrapeHomeDepot(url) {
-  const html = await zenrowsFetch(url, { jsRender: true, antibot: true, wait: 8000, retries: 3, minSize: 50000 });
+async function scrapeHomeDepot(url, failCount = 0) {
+  // Tier 1: wreq-js — HD often has __APOLLO_STATE__ or JSON-LD in SSR HTML
+  try {
+    const res = await wreqGet(url, {
+      browser: 'chrome_131',
+      os: 'windows',
+      headers: { 'accept-language': 'en-US,en;q=0.9' },
+    });
+    if (res.ok) {
+      const html = await res.text();
+      if (html.length >= 10000) {
+        let price = extractHomeDepotApolloPrice(html);
+        if (price === null) price = extractJsonLdPrice(html);
+        if (price === null) {
+          const spanMatch = html.match(/\$<\/span><span[^>]*>(\d+)<\/span><span[^>]*>\.<\/span><span[^>]*>(\d+)<\/span>/);
+          if (spanMatch) price = parseFloat(`${spanMatch[1]}.${spanMatch[2]}`);
+        }
+        if (price !== null) {
+          console.log(`[scraper-specialty] Home Depot: wreq-js succeeded`);
+          return { price, stockStatus: detectStockFromHtml(html) };
+        }
+        console.log(`[scraper-specialty] Home Depot: wreq-js got HTML (${html.length} bytes) but no price`);
+      } else {
+        console.log(`[scraper-specialty] Home Depot: wreq-js response too small (${html.length} bytes)`);
+      }
+    }
+  } catch (err) {
+    console.log(`[scraper-specialty] Home Depot: wreq-js failed: ${err.message}`);
+  }
 
-  if (html.length < 50000) {
-    console.log(`[scraper-specialty] Home Depot: response too small (${html.length} bytes)`);
+  // Tier 2: ZenRows — only if failCount >= 3
+  if (failCount < 3) {
+    console.log(`[scraper-specialty] Home Depot: skipping ZenRows (failCount=${failCount} < 3)`);
+    return { price: null, stockStatus: null };
+  }
+  if (!ZENROWS_KEY) {
+    console.log(`[scraper-specialty] Home Depot: ZENROWS_KEY not set, cannot escalate`);
     return { price: null, stockStatus: null };
   }
 
-  // Priority 1: Apollo state (most accurate, avoids promo text prices)
-  let price = extractHomeDepotApolloPrice(html);
+  console.log(`[scraper-specialty] Home Depot: escalating to ZenRows (failCount=${failCount})`);
+  const html = await zenrowsFetch(url, { jsRender: true, antibot: true, wait: 8000, retries: 3, minSize: 50000 });
 
-  // Priority 2: JSON-LD fallback
-  if (price === null) {
-    price = extractJsonLdPrice(html);
+  if (html.length < 50000) {
+    console.log(`[scraper-specialty] Home Depot: ZenRows response too small (${html.length} bytes)`);
+    return { price: null, stockStatus: null };
   }
 
-  // Priority 3: DOM span pattern fallback
+  let price = extractHomeDepotApolloPrice(html);
+  if (price === null) price = extractJsonLdPrice(html);
   if (price === null) {
     const spanMatch = html.match(/\$<\/span><span[^>]*>(\d+)<\/span><span[^>]*>\.<\/span><span[^>]*>(\d+)<\/span>/);
-    if (spanMatch) {
-      price = parseFloat(`${spanMatch[1]}.${spanMatch[2]}`);
-    }
+    if (spanMatch) price = parseFloat(`${spanMatch[1]}.${spanMatch[2]}`);
   }
 
   const stockStatus = detectStockFromHtml(html);
@@ -401,12 +478,42 @@ function extractLowesProductId(url) {
   return match ? match[1] : null;
 }
 
-async function scrapeLowes(url) {
-  // ZenRows WITHOUT js_render — Lowes SSRs price data into HTML. js_render causes 422 timeouts.
-  const html = await zenrowsFetch(url, { jsRender: false, antibot: true, retries: 3, minSize: 50000 });
+async function scrapeLowes(url, failCount = 0) {
+  let html = null;
 
-  if (html.length < 50000) {
-    console.log(`[scraper-specialty] Lowes: response too small (${html.length} bytes)`);
+  // Tier 1: wreq-js — Lowes SSRs JSON-LD into HTML without JS rendering
+  try {
+    const res = await wreqGet(url, {
+      browser: 'chrome_131',
+      os: 'windows',
+      headers: { 'accept-language': 'en-US,en;q=0.9' },
+    });
+    if (res.ok) {
+      const body = await res.text();
+      if (body.length >= 10000) {
+        html = body;
+        console.log(`[scraper-specialty] Lowes: wreq-js succeeded (${html.length} bytes)`);
+      } else {
+        console.log(`[scraper-specialty] Lowes: wreq-js response too small (${body.length} bytes)`);
+      }
+    }
+  } catch (err) {
+    console.log(`[scraper-specialty] Lowes: wreq-js failed: ${err.message}`);
+  }
+
+  // Tier 2: ZenRows — only if wreq-js failed AND failCount >= 3
+  if (!html && failCount >= 3 && ZENROWS_KEY) {
+    console.log(`[scraper-specialty] Lowes: escalating to ZenRows (failCount=${failCount})`);
+    try {
+      html = await zenrowsFetch(url, { jsRender: false, antibot: true, retries: 3, minSize: 50000 });
+    } catch (err) {
+      console.log(`[scraper-specialty] Lowes: ZenRows failed: ${err.message}`);
+    }
+  } else if (!html && failCount < 3) {
+    console.log(`[scraper-specialty] Lowes: skipping ZenRows (failCount=${failCount} < 3)`);
+  }
+
+  if (!html || html.length < 5000) {
     return { price: null, stockStatus: null };
   }
 
@@ -555,26 +662,80 @@ async function scrapeHobbyLobby(url) {
 }
 
 // ---------------------------------------------------------------------------
-// Menards — ZenRows + JSON-LD / CSS selector extraction.
-// Imperva/Incapsula bot protection blocks direct HTTP and browser requests.
-// ZenRows with antibot bypasses Incapsula server-side.
-// Menards product pages are SSR with JSON-LD Product schema when served
-// past the bot wall, so js_render is not needed (saves cost).
+// Menards — wreq-js + proxy (primary) → ZenRows fallback.
+// Imperva/Incapsula bot protection blocks direct HTTP requests, but
+// wreq-js with a residential proxy bypasses it reliably.
+// Price data lives in HTML-encoded Vue data attributes (salePrice/listPrice),
+// not in JSON-LD offers or standard CSS selectors.
 // ---------------------------------------------------------------------------
 
-async function scrapeMenards(url) {
-  const html = await zenrowsFetch(url, { jsRender: false, antibot: true, retries: 3, minSize: 5000 });
+const PROXY_URL = process.env.PROXY_URL || null;
 
-  if (html.length < 5000) {
-    console.log(`[scraper-specialty] Menards: response too small (${html.length} bytes)`);
-    return { price: null, stockStatus: null };
+async function scrapeMenards(url, failCount = 0) {
+  let html = null;
+
+  // Tier 1: wreq-js + residential proxy (free, reliable)
+  if (PROXY_URL) {
+    try {
+      const res = await wreqGet(url, {
+        browser: 'chrome_131',
+        os: 'windows',
+        headers: { 'accept-language': 'en-US,en;q=0.9' },
+        proxy: PROXY_URL,
+      });
+      if (res.ok) {
+        const body = await res.text();
+        if (body.length > 20000 && !/Pardon Our Interruption/i.test(body)) {
+          html = body;
+          console.log(`[scraper-specialty] Menards: wreq-js+proxy succeeded (${html.length} bytes)`);
+        } else {
+          console.log(`[scraper-specialty] Menards: wreq-js+proxy got challenge page`);
+        }
+      }
+    } catch (err) {
+      console.log(`[scraper-specialty] Menards: wreq-js+proxy failed: ${err.message}`);
+    }
   }
 
-  // Check if we still got the Incapsula challenge page
-  if (/Pardon Our Interruption|Incapsula/i.test(html)) {
-    console.log(`[scraper-specialty] Menards: still blocked by Incapsula, trying with js_render`);
-    const jsHtml = await zenrowsFetch(url, { jsRender: true, antibot: true, wait: 5000, retries: 2, minSize: 5000 });
-    return extractMenardsData(jsHtml);
+  // Tier 1b: wreq-js without proxy (worth a shot if no proxy configured)
+  if (!html && !PROXY_URL) {
+    try {
+      const res = await wreqGet(url, {
+        browser: 'chrome_131',
+        os: 'windows',
+        headers: { 'accept-language': 'en-US,en;q=0.9' },
+      });
+      if (res.ok) {
+        const body = await res.text();
+        if (body.length > 20000 && !/Pardon Our Interruption/i.test(body)) {
+          html = body;
+          console.log(`[scraper-specialty] Menards: wreq-js succeeded (${html.length} bytes)`);
+        }
+      }
+    } catch (err) {
+      console.log(`[scraper-specialty] Menards: wreq-js failed: ${err.message}`);
+    }
+  }
+
+  // Tier 2: ZenRows — only if free methods failed AND failCount >= 3
+  if (!html && failCount >= 3 && ZENROWS_KEY) {
+    console.log(`[scraper-specialty] Menards: escalating to ZenRows (failCount=${failCount})`);
+    try {
+      html = await zenrowsFetch(url, { jsRender: false, antibot: true, retries: 3, minSize: 5000 });
+      if (html.length < 5000 || /Pardon Our Interruption|Incapsula/i.test(html)) {
+        console.log(`[scraper-specialty] Menards: ZenRows without js_render blocked, trying with js_render`);
+        html = await zenrowsFetch(url, { jsRender: true, antibot: true, wait: 5000, retries: 2, minSize: 5000 });
+      }
+    } catch (err) {
+      console.log(`[scraper-specialty] Menards: ZenRows failed: ${err.message}`);
+    }
+  } else if (!html && failCount < 3) {
+    console.log(`[scraper-specialty] Menards: skipping ZenRows (failCount=${failCount} < 3)`);
+  }
+
+  if (!html || html.length < 5000) {
+    console.log(`[scraper-specialty] Menards: all fetch methods failed`);
+    return { price: null, stockStatus: null };
   }
 
   return extractMenardsData(html);
@@ -583,10 +744,27 @@ async function scrapeMenards(url) {
 function extractMenardsData(html) {
   const $ = load(html);
 
-  // Priority 1: JSON-LD structured data
-  let price = extractJsonLdPrice(html);
+  let price = null;
 
-  // Priority 2: Menards-specific price selectors
+  // Priority 1: salePrice / listPrice from HTML-encoded Vue data attributes.
+  // Menards embeds product data in Vue component attrs as &quot;-encoded JSON.
+  // Decode entities and extract salePrice (preferred) or listPrice.
+  const decoded = html.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  const saleMatch = decoded.match(/"salePrice"\s*:\s*([\d.]+)/);
+  if (saleMatch) {
+    price = parsePrice(saleMatch[1]);
+  }
+  if (price === null) {
+    const listMatch = decoded.match(/"listPrice"\s*:\s*([\d.]+)/);
+    if (listMatch) price = parsePrice(listMatch[1]);
+  }
+
+  // Priority 2: JSON-LD structured data (has availability but often no price)
+  if (price === null) {
+    price = extractJsonLdPrice(html);
+  }
+
+  // Priority 3: Menards-specific CSS selectors
   if (price === null) {
     const priceSelectors = [
       '#defined-price',
@@ -604,7 +782,7 @@ function extractMenardsData(html) {
     }
   }
 
-  // Priority 3: og:price meta tag
+  // Priority 4: og:price meta tag
   if (price === null) {
     price = parsePrice($('meta[property="og:price:amount"], meta[property="product:price:amount"]').attr('content'));
   }

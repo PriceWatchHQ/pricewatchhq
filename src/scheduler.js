@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import db from './db.js';
 import { scrapePrice, scrapePriceAndStock, scrapePriceAndStockWithFallback } from './scraper.js';
 import { isRetailUrl, scrapePriceAndStockRetail } from './scraper-retail.js';
-import { isSpecialtyUrl, scrapePriceAndStockSpecialty } from './scraper-specialty.js';
+import { isSpecialtyUrl, scrapePriceAndStockSpecialty, UNSUPPORTED_WITHOUT_ZENROWS } from './scraper-specialty.js';
 import { runPoster } from './poster.js';
 import { runEngager } from './engager.js';
 import { sendPriceAlert, sendSlackAlert, sendSmsAlert, sendStockAlert, sendSlackStockAlert, sendSmsStockAlert } from './mailer.js';
@@ -98,13 +98,14 @@ async function processUrl({ entry, plan, useHeadless, usePlaywright }) {
   try {
         // Retail URLs (Walmart, Best Buy, Target) always use the retail scraper
         // regardless of plan — plain HTTP never works on these sites
+        const failCount = entry.fail_count || 0;
         let price, stockStatus;
         if (isSpecialtyUrl(entry.url)) {
-          ({ price, stockStatus } = await scrapePriceAndStockSpecialty(entry.url));
+          ({ price, stockStatus } = await scrapePriceAndStockSpecialty(entry.url, failCount));
         } else if (isRetailUrl(entry.url)) {
           ({ price, stockStatus } = await scrapePriceAndStockRetail(entry.url));
         } else if (useHeadless) {
-          ({ price, stockStatus } = await scrapePriceAndStockWithFallback(entry.url, usePlaywright));
+          ({ price, stockStatus } = await scrapePriceAndStockWithFallback(entry.url, usePlaywright, failCount));
         } else {
           ({ price, stockStatus } = await scrapePriceAndStock(entry.url));
         }
@@ -112,6 +113,18 @@ async function processUrl({ entry, plan, useHeadless, usePlaywright }) {
         if (price === null && stockStatus === null) {
           const newFailCount = (entry.fail_count || 0) + 1;
           console.log(`[scheduler] No price or stock found for ${entry.url} (fail ${newFailCount})`);
+
+          // Check if this is a specialty domain that's unsupported without ZenRows
+          const isUnsupportedNoZenRows = !process.env.ZENROWS_KEY &&
+            UNSUPPORTED_WITHOUT_ZENROWS.some(d => entry.url.toLowerCase().includes(d));
+          if (isUnsupportedNoZenRows && newFailCount >= 3) {
+            db.prepare(
+              `UPDATE watched_urls SET fail_count = ?, url_status = 'unavailable', last_checked_at = datetime('now') WHERE id = ?`
+            ).run(newFailCount, entry.id);
+            console.log(`[scheduler] Marked ${entry.url} as unavailable — domain unsupported without ZENROWS_KEY`);
+            return;
+          }
+
           // All retail/known-tricky URLs — never mark unavailable, keep retrying
           const isKnownHard = /walmart\.com|bestbuy\.com|target\.com|gamestop\.com|hy-vee\.com|tjmaxx\.tjx\.com|homedepot\.com|lowes\.com|michaels\.com/i.test(entry.url);
           if (!isKnownHard && newFailCount >= 5) {

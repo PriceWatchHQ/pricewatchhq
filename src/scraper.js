@@ -215,16 +215,8 @@ export async function scrapePriceAndStock(url) {
   // Extract stock status (reuse the html we already fetched)
   const stockStatus = await scrapeStockStatus(url, html);
 
-  // If price still null, try ZenRows tier-3 fallback
-  if (price === null && process.env.ZENROWS_KEY) {
-    console.log(`[scraper] wreq-js returned null price for ${url}, trying ZenRows...`);
-    try {
-      const zenResult = await scrapeViaZenRows(url);
-      if (zenResult.price !== null) return { price: zenResult.price, stockStatus: zenResult.stockStatus ?? stockStatus };
-    } catch (err) {
-      console.error(`[scraper] ZenRows fallback error for ${url}:`, err.message);
-    }
-  }
+  // ZenRows removed from basic scraper — only used as last resort in
+  // scrapePriceAndStockWithFallback when failCount >= 3
 
   return { price, stockStatus };
 }
@@ -294,7 +286,7 @@ function extractPriceFromSchemaObject(obj) {
  * Fallback chain: HTTP → Specialty (GameStop, Hy-Vee, etc.) → Retail stealth → Playwright → Puppeteer headless → ZenRows.
  * Returns { price, stockStatus }.
  */
-export async function scrapePriceAndStockWithFallback(url, usePlaywright = false) {
+export async function scrapePriceAndStockWithFallback(url, usePlaywright = false, failCount = 0) {
   let httpResult = { price: null, stockStatus: null };
   try {
     httpResult = await scrapePriceAndStock(url);
@@ -311,7 +303,7 @@ export async function scrapePriceAndStockWithFallback(url, usePlaywright = false
   if (isSpecialtyUrl(url)) {
     console.log(`[scraper] HTTP scraper returned no price for ${url}, trying specialty scraper...`);
     try {
-      const specialtyResult = await scrapePriceAndStockSpecialty(url);
+      const specialtyResult = await scrapePriceAndStockSpecialty(url, failCount);
       if (specialtyResult.price !== null) {
         console.log(`[scraper] Specialty scraper succeeded for ${url}: price=${specialtyResult.price}`);
         return {
@@ -375,9 +367,9 @@ export async function scrapePriceAndStockWithFallback(url, usePlaywright = false
     console.error(`[scraper] Headless scraper failed for ${url}:`, err.message);
   }
 
-  // ZenRows premium proxy fallback (tier 3) — last resort for bot-protected sites
-  if (process.env.ZENROWS_KEY) {
-    console.log(`[scraper] Trying ZenRows fallback for ${url}...`);
+  // ZenRows premium proxy fallback (tier 3) — true last resort, only after 3+ failures
+  if (process.env.ZENROWS_KEY && failCount >= 3) {
+    console.log(`[scraper] Trying ZenRows fallback for ${url} (failCount=${failCount})...`);
     try {
       const zenResult = await scrapeViaZenRows(url);
       if (zenResult.price !== null) {
@@ -389,6 +381,8 @@ export async function scrapePriceAndStockWithFallback(url, usePlaywright = false
     } catch (err) {
       console.error(`[scraper] ZenRows fallback failed for ${url}:`, err.message);
     }
+  } else if (!process.env.ZENROWS_KEY || failCount < 3) {
+    console.log(`[scraper] Skipping ZenRows for ${url} (failCount=${failCount}, need >= 3)`);
   }
 
   return httpResult;
